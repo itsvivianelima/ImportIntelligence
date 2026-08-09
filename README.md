@@ -16,3 +16,7 @@ IMPORT INTELLIGENCE is a greenfield import management platform. It is separate f
 ## Data State
 
 The final database is intentionally empty. No fake suppliers, requests, shipments, rates, contracts, invoices, packages, containers, costs, or production-like records are seeded.
+
+## Cloudflare Deployment
+
+This project can be deployed directly to Cloudflare Workers with `wrangler.jsonc`.

@@ -11,7 +11,9 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "cloudflare:deploy": "npm run build && wrangler deploy",
+    "cloudflare:db:init": "wrangler d1 execute import-intelligence-db --remote --file=drizzle/0000_brave_eternity.sql && wrangler d1 execute import-intelligence-db --remote --file=drizzle/0001_chunky_scalphunter.sql && wrangler d1 execute import-intelligence-db --remote --file=drizzle/0002_seed_first_admin.sql"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
