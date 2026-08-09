@@ -14,7 +14,8 @@ export type EntityKey =
   | "exchangeRates"
   | "commercialInvoices"
   | "packages"
-  | "containers";
+  | "containers"
+  | "shipmentDemands";
 
 export const materialTypes = [
   "Matéria Prima",

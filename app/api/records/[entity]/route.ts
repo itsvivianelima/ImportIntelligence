@@ -14,6 +14,7 @@ import {
   publicRates,
   requesters,
   shipments,
+  shipmentDemands,
   suppliers,
   surcharges,
 } from "../../../../db/schema";
@@ -31,7 +32,10 @@ import {
   isSupabaseConfigured,
   listSupabaseRows,
   updateSupabaseRow,
+  getSupabaseRow,
+  recalculateSupabaseDemandFulfillment,
 } from "../../../../lib/supabase-store";
+import { buildTransitExcelExport, isReportExport } from "../../../../lib/report-export";
 
 type RouteContext = { params: Promise<{ entity: string }> };
 
@@ -52,6 +56,7 @@ const tableByEntity = {
   commercialInvoices,
   packages,
   containers,
+  shipmentDemands,
 } as const;
 
 const entityLabels: Record<EntityKey, string> = {
@@ -71,6 +76,7 @@ const entityLabels: Record<EntityKey, string> = {
   commercialInvoices: "COMMERCIAL INVOICES",
   packages: "PACKAGES",
   containers: "CONTAINERS",
+  shipmentDemands: "SHIPMENT DEMANDS",
 };
 
 function routeError(error: unknown) {
@@ -116,6 +122,10 @@ function normalizePayload(entity: EntityKey, payload: Record<string, unknown>) {
   return cleaned;
 }
 
+function demandIdFromLink(values: Record<string, unknown>) {
+  return Number(values.demandId ?? values.demand_id ?? 0);
+}
+
 function rowTitle(entity: EntityKey, values: Record<string, unknown>) {
   const title =
     values.name ||
@@ -131,11 +141,19 @@ function rowTitle(entity: EntityKey, values: Record<string, unknown>) {
   return String(title);
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const entity = await resolveEntity(context.params);
     if (await isSupabaseConfigured()) {
-      return Response.json({ rows: await listSupabaseRows(entity) });
+      const rows = await listSupabaseRows(entity);
+      const exportType = new URL(request.url).searchParams.get("export");
+      if (isReportExport(exportType) && (entity === "shipments" || entity === "demands")) {
+        return buildTransitExcelExport(exportType!, rows, {
+          suppliers: await listSupabaseRows("suppliers"),
+          partNumbers: entity === "demands" ? await listSupabaseRows("partNumbers") : [],
+        });
+      }
+      return Response.json({ rows });
     }
 
     const db = await getDatabase();
@@ -174,6 +192,11 @@ export async function POST(request: Request, context: RouteContext) {
       summary: `Created ${rowTitle(entity, row)}`,
     });
 
+    if (entity === "shipmentDemands" && useSupabase) {
+      const demandId = demandIdFromLink(row);
+      if (demandId) await recalculateSupabaseDemandFulfillment(demandId);
+    }
+
     return Response.json({ row }, { status: 201 });
   } catch (error) {
     if (error instanceof Response) return error;
@@ -193,6 +216,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const values = normalizePayload(entity, payload);
     const useSupabase = await isSupabaseConfigured();
+    const previousRow = useSupabase ? await getSupabaseRow(entity, id) : null;
     const row = useSupabase
       ? await updateSupabaseRow(entity, id, values)
       : await updateD1Row(entity, id, values);
@@ -203,7 +227,16 @@ export async function PATCH(request: Request, context: RouteContext) {
       action: "UPDATE",
       actorEmail: user.email,
       summary: `Updated ${rowTitle(entity, row ?? values)}`,
+      previousValue: previousRow ? JSON.stringify(previousRow) : "",
+      newValue: row ? JSON.stringify(row) : JSON.stringify(values),
     });
+
+    if (entity === "shipmentDemands" && useSupabase) {
+      const previousDemandId = previousRow ? demandIdFromLink(previousRow) : 0;
+      const currentDemandId = row ? demandIdFromLink(row) : demandIdFromLink(values);
+      if (previousDemandId) await recalculateSupabaseDemandFulfillment(previousDemandId);
+      if (currentDemandId && currentDemandId !== previousDemandId) await recalculateSupabaseDemandFulfillment(currentDemandId);
+    }
 
     return Response.json({ row });
   } catch (error) {
@@ -223,6 +256,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (!id) return Response.json({ error: "id is required" }, { status: 400 });
 
     const useSupabase = await isSupabaseConfigured();
+    const previousRow = useSupabase ? await getSupabaseRow(entity, id) : null;
     if (useSupabase) {
       await deleteSupabaseRow(entity, id);
     } else {
@@ -235,7 +269,13 @@ export async function DELETE(request: Request, context: RouteContext) {
       action: "DELETE",
       actorEmail: user.email,
       summary: `Deleted ${entityLabels[entity]} #${id}`,
+      previousValue: previousRow ? JSON.stringify(previousRow) : "",
     });
+
+    if (entity === "shipmentDemands" && useSupabase && previousRow) {
+      const demandId = demandIdFromLink(previousRow);
+      if (demandId) await recalculateSupabaseDemandFulfillment(demandId);
+    }
 
     return Response.json({ ok: true });
   } catch (error) {

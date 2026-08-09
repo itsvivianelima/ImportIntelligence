@@ -135,6 +135,14 @@ export const containers = sqliteTable("containers", {
   ...timestamps,
 });
 
+export const shipmentDemands = sqliteTable("shipment_demands", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipmentId: integer("shipment_id").notNull().references(() => shipments.id),
+  demandId: integer("demand_id").notNull().references(() => demands.id),
+  quantity: real("quantity").notNull().default(0),
+  ...timestamps,
+});
+
 export const consolidations = sqliteTable("consolidations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   consolidationNumber: text("consolidation_number").notNull(),
@@ -205,7 +213,11 @@ export const auditEvents = sqliteTable("audit_events", {
   entityId: integer("entity_id").notNull(),
   action: text("action").notNull(),
   actorEmail: text("actor_email").notNull().default(""),
+  fieldName: text("field_name").notNull().default(""),
+  previousValue: text("previous_value").notNull().default(""),
+  newValue: text("new_value").notNull().default(""),
   summary: text("summary").notNull().default(""),
+  notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

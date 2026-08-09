@@ -123,6 +123,20 @@ const modules: ModuleConfig[] = [
     ],
   },
   {
+    key: "shipmentDemands",
+    title: "SHIPMENT DEMANDS",
+    group: "OPERATIONS",
+    description: "Explicit demand-to-shipment allocation. Excess stays on the selected demand until manually applied elsewhere.",
+    fullPage: true,
+    columns: ["shipmentId", "demandId", "quantity", "notes"],
+    fields: [
+      { key: "shipmentId", label: "SHIPMENT", type: "relation", relation: "shipments", relationLabel: ["shipmentNumber", "reference"], relationValue: "id" },
+      { key: "demandId", label: "DEMAND", type: "relation", relation: "demands", relationLabel: ["demandNumber", "reference"], relationValue: "id" },
+      { key: "quantity", label: "QUANTITY USED FROM DEMAND", type: "number" },
+      { key: "notes", label: "NOTES", type: "textarea" },
+    ],
+  },
+  {
     key: "consolidations",
     title: "CONSOLIDATIONS",
     group: "OPERATIONS",
@@ -710,9 +724,9 @@ export function ImportIntelligenceApp({
                 </div>
               </form>
             ) : (
-              <div className="detail-empty">
+            <div className="detail-empty">
                 <strong>CONNECTED ENTITIES</strong>
-                <span>Supplier {"->"} Part Number {"->"} Demand {"->"} Shipment {"->"} Packing {"->"} Containers {"->"} Invoices {"->"} Reports {"->"} Insights</span>
+                <span>Supplier {"->"} Part Number {"->"} Demand {"->"} Shipment Demand Link {"->"} Shipment {"->"} Packing {"->"} Containers {"->"} Invoices {"->"} Reports {"->"} Insights</span>
               </div>
             )}
           </aside>
@@ -892,10 +906,20 @@ function Dashboard() {
 function Reports() {
   return (
     <div className="report-grid">
-      {["CONFIRMED TRANSIT", "PROBABLE TRANSIT", "ESTIMATED TRANSIT", "SAVINGS"].map((report) => (
+      {[
+        ["CONFIRMED TRANSIT", "/api/records/shipments?export=confirmed"],
+        ["PROBABLE TRANSIT", "/api/records/shipments?export=probable"],
+        ["ESTIMATED TRANSIT", "/api/records/demands?export=estimated"],
+        ["SAVINGS", ""],
+      ].map(([report, exportPath]) => (
         <article key={report}>
           <h3>{report}</h3>
           <p>Waiting for operational history. No fake production data is loaded.</p>
+          {exportPath ? (
+            <a className="export-link" href={exportPath}>
+              EXPORT EXCEL
+            </a>
+          ) : null}
         </article>
       ))}
     </div>

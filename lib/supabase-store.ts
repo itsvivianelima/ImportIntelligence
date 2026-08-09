@@ -36,6 +36,7 @@ const entityTables: Record<EntityKey, string> = {
   commercialInvoices: "ii_commercial_invoices",
   packages: "ii_packages",
   containers: "ii_containers",
+  shipmentDemands: "ii_shipment_demands",
 };
 
 const dateFields = new Set([
@@ -58,6 +59,13 @@ const dateFields = new Set([
   "valid_from",
   "valid_to",
   "rate_date",
+  "readiness_date",
+  "modine_deadline",
+  "deadline",
+  "stock_entry_date",
+  "hbl_awb_date",
+  "free_time_deadline",
+  "source_date",
 ]);
 
 const numericFields = new Set([
@@ -72,6 +80,12 @@ const numericFields = new Set([
   "amount",
   "rate",
   "total_cbm",
+  "linked_quantity",
+  "shipped_quantity",
+  "excess_quantity",
+  "total_equipment",
+  "package_quantity",
+  "quantity",
 ]);
 
 export async function isSupabaseConfigured() {
@@ -137,6 +151,14 @@ export async function listSupabaseRows(entity: EntityKey) {
   return rows.map(fromSnakeRow);
 }
 
+export async function getSupabaseRow(entity: EntityKey, id: number) {
+  const table = entityTables[entity];
+  const rows = await requestSupabase<Record<string, unknown>[]>(table, "GET", {
+    query: `select=*&id=eq.${id}&limit=1`,
+  });
+  return rows[0] ? fromSnakeRow(rows[0]) : null;
+}
+
 export async function createSupabaseRow(entity: EntityKey, values: Record<string, unknown>) {
   const table = entityTables[entity];
   const [row] = await requestSupabase<Record<string, unknown>[]>(table, "POST", {
@@ -168,6 +190,10 @@ export async function insertSupabaseAudit(values: {
   action: string;
   actorEmail: string;
   summary: string;
+  fieldName?: string;
+  previousValue?: string;
+  newValue?: string;
+  notes?: string;
 }) {
   await requestSupabase("ii_audit_events", "POST", {
     body: [
@@ -176,11 +202,45 @@ export async function insertSupabaseAudit(values: {
         entity_id: values.entityId,
         action: values.action,
         actor_email: values.actorEmail,
+        field_name: values.fieldName ?? "",
+        previous_value: values.previousValue ?? "",
+        new_value: values.newValue ?? "",
         summary: values.summary,
+        notes: values.notes ?? "",
       },
     ],
     prefer: "return=minimal",
   });
+}
+
+export async function recalculateSupabaseDemandFulfillment(demandId: number) {
+  const demand = await getSupabaseRow("demands", demandId);
+  if (!demand) return null;
+
+  const links = await requestSupabase<Record<string, unknown>[]>("ii_shipment_demands", "GET", {
+    query: `select=*&demand_id=eq.${demandId}`,
+  });
+  const linkedQuantity = links.reduce((total, row) => total + Number(row.quantity ?? 0), 0);
+  const requestedQuantity = Number(demand.requestedQuantity ?? 0);
+  const shippedQuantity = Math.min(linkedQuantity, requestedQuantity || linkedQuantity);
+  const excessQuantity = Math.max(0, linkedQuantity - requestedQuantity);
+  const manuallyClosed = Boolean(demand.manuallyClosed);
+  const status = resolveDemandStatusForQuantities(requestedQuantity, shippedQuantity, manuallyClosed);
+
+  return await updateSupabaseRow("demands", demandId, {
+    linkedQuantity,
+    shippedQuantity,
+    fulfilledQuantity: shippedQuantity,
+    excessQuantity,
+    status,
+  });
+}
+
+function resolveDemandStatusForQuantities(requestedQuantity: number, shippedQuantity: number, manuallyClosed: boolean) {
+  if (manuallyClosed) return "Closed";
+  if (requestedQuantity > 0 && shippedQuantity >= requestedQuantity) return "Fulfilled";
+  if (shippedQuantity > 0) return "Partially Fulfilled";
+  return "Open";
 }
 
 function toAppUser(row?: AppUserRow) {
