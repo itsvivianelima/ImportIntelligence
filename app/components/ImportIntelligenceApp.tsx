@@ -2,17 +2,34 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  airDestinations,
+  clearanceTypes,
+  containerTypes,
+  currencies,
+  dimensionUnits,
+  incoterms,
   materialTypes,
+  modals,
+  packageTypes,
+  paymentTerms,
   resolveDemandStatus,
   resolveShipmentStatus,
+  seaDestinations,
+  tariffTypes,
   type EntityKey,
 } from "../../lib/domain";
 
 type Field = {
   key: string;
   label: string;
-  type?: "text" | "number" | "date" | "select" | "textarea" | "checkbox";
+  type?: "text" | "number" | "date" | "select" | "textarea" | "checkbox" | "relation" | "lookup";
   options?: readonly string[];
+  relation?: EntityKey;
+  relationLabel?: string[];
+  relationValue?: string;
+  dependsOn?: string;
+  dependsValueKey?: string;
+  quickAdd?: EntityKey;
 };
 
 type ModuleConfig = {
@@ -43,13 +60,21 @@ const modules: ModuleConfig[] = [
     columns: ["demandNumber", "requiredDate", "requestedQuantity", "fulfilledQuantity", "status"],
     fields: [
       { key: "demandNumber", label: "DEMAND NUMBER" },
-      { key: "supplierId", label: "SUPPLIER ID", type: "number" },
-      { key: "partNumberId", label: "PART NUMBER ID", type: "number" },
-      { key: "requesterId", label: "REQUESTER ID", type: "number" },
-      { key: "requiredDate", label: "REQUIRED DATE", type: "date" },
-      { key: "requestedQuantity", label: "REQUESTED QUANTITY", type: "number" },
+      { key: "reference", label: "REFERENCE" },
+      { key: "supplierId", label: "SUPPLIER", type: "relation", relation: "suppliers", relationLabel: ["name", "country"], relationValue: "id" },
+      { key: "partNumberId", label: "PART NUMBER", type: "relation", relation: "partNumbers", relationLabel: ["partNumber", "description"], relationValue: "id", dependsOn: "supplierId", dependsValueKey: "supplierId" },
+      { key: "requesterId", label: "REQUESTER", type: "relation", relation: "requesters", relationLabel: ["name", "department"], relationValue: "id" },
+      { key: "requestedQuantity", label: "QUANTITY", type: "number" },
+      { key: "unitOfMeasure", label: "UNIT" },
+      { key: "readinessDate", label: "READINESS DATE", type: "date" },
+      { key: "modineDeadline", label: "MODINE DEADLINE", type: "date" },
       { key: "fulfilledQuantity", label: "FULFILLED QUANTITY", type: "number" },
-      { key: "forecastModal", label: "FORECAST MODAL", type: "select", options: ["", "AIR", "LCL", "FCL"] },
+      { key: "linkedQuantity", label: "LINKED QUANTITY", type: "number" },
+      { key: "shippedQuantity", label: "SHIPPED QUANTITY", type: "number" },
+      { key: "excessQuantity", label: "EXCESS QUANTITY", type: "number" },
+      { key: "manuallyClosed", label: "CLOSE DEMAND AS FULFILLED", type: "checkbox" },
+      { key: "forecastModal", label: "FORECAST MODAL", type: "select", options: ["", ...modals] },
+      { key: "demandType", label: "TYPE", type: "select", options: materialTypes },
       { key: "notes", label: "NOTES", type: "textarea" },
     ],
   },
@@ -62,14 +87,20 @@ const modules: ModuleConfig[] = [
     columns: ["shipmentNumber", "modal", "pol", "pod", "eta", "deliveryDate", "status"],
     fields: [
       { key: "shipmentNumber", label: "SHIPMENT NUMBER" },
-      { key: "supplierId", label: "SUPPLIER ID", type: "number" },
-      { key: "agentId", label: "AGENT ID", type: "number" },
-      { key: "modal", label: "MODAL", type: "select", options: ["AIR", "LCL", "FCL"] },
+      { key: "reference", label: "REFERENCE" },
+      { key: "supplierId", label: "SUPPLIER", type: "relation", relation: "suppliers", relationLabel: ["name", "country"], relationValue: "id" },
+      { key: "agentId", label: "AGENT", type: "relation", relation: "agents", relationLabel: ["name", "paymentTerms"], relationValue: "id" },
+      { key: "modal", label: "MODAL", type: "select", options: modals },
       { key: "shipmentType", label: "SHIPMENT TYPE", type: "select", options: materialTypes },
-      { key: "incoterm", label: "INCOTERM" },
-      { key: "cfs", label: "CFS" },
-      { key: "pol", label: "POL" },
-      { key: "pod", label: "POD" },
+      { key: "incoterm", label: "INCOTERM", type: "select", options: ["", ...incoterms] },
+      { key: "clearanceType", label: "CLEARANCE", type: "select", options: ["", ...clearanceTypes] },
+      { key: "tariffType", label: "TARIFF", type: "select", options: ["", ...tariffTypes] },
+      { key: "cfs", label: "CFS", type: "lookup", relation: "cfs", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "cfs" },
+      { key: "pol", label: "POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "pol" },
+      { key: "pod", label: "POD / AIRPORT", type: "select", options: ["", ...seaDestinations, ...airDestinations] },
+      { key: "deadline", label: "DEADLINE", type: "date" },
+      { key: "bookingNumber", label: "BOOKING NUMBER" },
+      { key: "vessel", label: "VESSEL" },
       { key: "quotationDate", label: "QUOTATION DATE", type: "date" },
       { key: "greenLightDate", label: "GREEN LIGHT DATE", type: "date" },
       { key: "cargoReadyDate", label: "CARGO READY DATE", type: "date" },
@@ -82,7 +113,12 @@ const modules: ModuleConfig[] = [
       { key: "eta", label: "ETA", type: "date" },
       { key: "ata", label: "ATA", type: "date" },
       { key: "pcd", label: "PCD", type: "date" },
+      { key: "pcdIsSet", label: "THIS ETD IS PCD", type: "checkbox" },
       { key: "deliveryDate", label: "DELIVERY DATE", type: "date" },
+      { key: "stockEntryDate", label: "STOCK ENTRY DATE", type: "date" },
+      { key: "operationalDeviation", label: "OPERATIONAL DEVIATION — EXCLUDE FROM FORECASTING", type: "checkbox" },
+      { key: "hblAwb", label: "HBL / AWB" },
+      { key: "hblAwbDate", label: "HBL / AWB DATE", type: "date" },
       { key: "notes", label: "NOTES", type: "textarea" },
     ],
   },
@@ -95,9 +131,9 @@ const modules: ModuleConfig[] = [
     columns: ["consolidationNumber", "cfs", "pol", "pod", "closingDate", "totalCbm", "status"],
     fields: [
       { key: "consolidationNumber", label: "CONSOLIDATION NUMBER" },
-      { key: "cfs", label: "CFS" },
-      { key: "pol", label: "POL" },
-      { key: "pod", label: "POD" },
+      { key: "cfs", label: "CFS", type: "lookup", relation: "cfs", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "cfs" },
+      { key: "pol", label: "POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "pol" },
+      { key: "pod", label: "POD", type: "select", options: ["", ...seaDestinations] },
       { key: "closingDate", label: "CLOSING DATE", type: "date" },
       { key: "eta", label: "ETA", type: "date" },
       { key: "totalCbm", label: "TOTAL CBM", type: "number" },
@@ -111,14 +147,26 @@ const modules: ModuleConfig[] = [
     group: "MASTER DATA",
     description: "Supplier and exporter master data with TIN, default POL, and default CFS.",
     fullPage: true,
-    columns: ["code", "name", "country", "tin", "defaultPol", "defaultCfs"],
+    columns: ["name", "city", "country", "defaultCurrency", "tin", "defaultPol", "defaultCfs"],
     fields: [
       { key: "code", label: "SUPPLIER CODE" },
-      { key: "name", label: "SUPPLIER NAME" },
+      { key: "name", label: "FULL COMPANY NAME" },
+      { key: "address", label: "FULL ADDRESS" },
+      { key: "city", label: "CITY" },
+      { key: "stateProvince", label: "STATE / PROVINCE" },
+      { key: "postalCode", label: "POSTAL CODE" },
       { key: "country", label: "COUNTRY" },
+      { key: "continent", label: "CONTINENT" },
+      { key: "defaultCurrency", label: "DEFAULT CURRENCY", type: "select", options: ["", ...currencies] },
       { key: "tin", label: "TIN" },
-      { key: "defaultPol", label: "DEFAULT POL" },
-      { key: "defaultCfs", label: "DEFAULT CFS" },
+      { key: "defaultIncotermAir", label: "DEFAULT INCOTERM AIR", type: "select", options: ["", ...incoterms] },
+      { key: "defaultIncotermLcl", label: "DEFAULT INCOTERM LCL", type: "select", options: ["", ...incoterms] },
+      { key: "defaultIncotermFcl", label: "DEFAULT INCOTERM FCL", type: "select", options: ["", ...incoterms] },
+      { key: "defaultPol", label: "DEFAULT POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "pol" },
+      { key: "defaultCfs", label: "DEFAULT CFS", type: "lookup", relation: "cfs", relationLabel: ["code", "name"], relationValue: "code", quickAdd: "cfs" },
+      { key: "contactName", label: "CONTACT NAME" },
+      { key: "contactEmail", label: "CONTACT EMAIL" },
+      { key: "contactPhone", label: "CONTACT PHONE" },
       { key: "notes", label: "NOTES", type: "textarea" },
     ],
   },
@@ -130,9 +178,11 @@ const modules: ModuleConfig[] = [
     columns: ["partNumber", "description", "ncm", "materialType", "netWeightKg", "cbm"],
     fields: [
       { key: "partNumber", label: "PART NUMBER" },
-      { key: "supplierId", label: "SUPPLIER ID", type: "number" },
+      { key: "supplierId", label: "SUPPLIER", type: "relation", relation: "suppliers", relationLabel: ["name", "country"], relationValue: "id" },
       { key: "description", label: "DESCRIPTION" },
       { key: "ncm", label: "NCM" },
+      { key: "ncmReviewedAt", label: "NCM LAST REVIEW DATE", type: "date" },
+      { key: "unitOfMeasure", label: "UNIT OF MEASURE" },
       { key: "materialType", label: "MATERIAL TYPE", type: "select", options: materialTypes },
       { key: "netWeightKg", label: "NET WEIGHT KG", type: "number" },
       { key: "cbm", label: "CBM", type: "number" },
@@ -155,11 +205,18 @@ const modules: ModuleConfig[] = [
     title: "AGENTS",
     group: "MASTER DATA",
     description: "Forwarder and agent contacts used in shipment execution and invoices.",
-    columns: ["name", "email", "phone"],
+    columns: ["name", "contactName", "paymentTerms", "paymentDays"],
     fields: [
       { key: "name", label: "NAME" },
+      { key: "contactName", label: "CONTACT NAME" },
       { key: "email", label: "EMAIL" },
       { key: "phone", label: "PHONE" },
+      { key: "paymentDays", label: "PAYMENT DAYS", type: "number" },
+      { key: "paymentTerms", label: "PAYMENT TERMS", type: "select", options: ["", ...paymentTerms] },
+      { key: "serviceAir", label: "SERVICE AIR", type: "checkbox" },
+      { key: "serviceLcl", label: "SERVICE LCL", type: "checkbox" },
+      { key: "serviceFcl", label: "SERVICE FCL", type: "checkbox" },
+      { key: "serviceCourier", label: "SERVICE COURIER", type: "checkbox" },
       { key: "notes", label: "NOTES", type: "textarea" },
     ],
   },
@@ -196,15 +253,17 @@ const modules: ModuleConfig[] = [
     columns: ["contractNumber", "carrier", "modal", "pol", "pod", "currency", "rate", "usedCount"],
     fields: [
       { key: "contractNumber", label: "CONTRACT NUMBER" },
-      { key: "carrier", label: "CARRIER" },
-      { key: "modal", label: "MODAL", type: "select", options: ["AIR", "LCL", "FCL"] },
-      { key: "pol", label: "POL" },
-      { key: "pod", label: "POD" },
-      { key: "equipment", label: "EQUIPMENT" },
-      { key: "currency", label: "CURRENCY" },
+      { key: "carrier", label: "PROVIDER" },
+      { key: "modal", label: "MODAL", type: "select", options: modals },
+      { key: "pol", label: "POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code" },
+      { key: "pod", label: "POD", type: "select", options: ["ALL", ...seaDestinations, ...airDestinations] },
+      { key: "equipment", label: "EQUIPMENT", type: "select", options: ["", ...containerTypes] },
+      { key: "currency", label: "CURRENCY", type: "select", options: currencies },
       { key: "rate", label: "RATE", type: "number" },
       { key: "validFrom", label: "VALID FROM", type: "date" },
       { key: "validTo", label: "VALID TO", type: "date" },
+      { key: "totalEquipment", label: "TOTAL EQUIPMENT", type: "number" },
+      { key: "notes", label: "NOTES", type: "textarea" },
     ],
   },
   {
@@ -214,11 +273,13 @@ const modules: ModuleConfig[] = [
     description: "Public tariff baseline used for savings calculations.",
     columns: ["carrier", "modal", "pol", "pod", "currency", "rate", "chargingBasis"],
     fields: [
-      { key: "carrier", label: "CARRIER" },
-      { key: "modal", label: "MODAL", type: "select", options: ["AIR", "LCL", "FCL"] },
-      { key: "pol", label: "POL" },
-      { key: "pod", label: "POD" },
-      { key: "currency", label: "CURRENCY" },
+      { key: "agentId", label: "PROVIDER", type: "relation", relation: "agents", relationLabel: ["name"], relationValue: "id" },
+      { key: "carrier", label: "CARRIER / PROVIDER NAME" },
+      { key: "modal", label: "MODAL", type: "select", options: modals },
+      { key: "containerType", label: "CONTAINER", type: "select", options: ["Todos", ...containerTypes] },
+      { key: "pol", label: "POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code" },
+      { key: "pod", label: "POD", type: "select", options: ["ALL", ...seaDestinations, ...airDestinations] },
+      { key: "currency", label: "CURRENCY", type: "select", options: currencies },
       { key: "rate", label: "RATE", type: "number" },
       { key: "chargingBasis", label: "CHARGING BASIS", type: "select", options: ["W/M", "CBM", "CONTAINER", "AWB"] },
       { key: "validFrom", label: "VALID FROM", type: "date" },
@@ -233,10 +294,16 @@ const modules: ModuleConfig[] = [
     columns: ["name", "modal", "currency", "amount", "chargingBasis", "comparable"],
     fields: [
       { key: "name", label: "NAME" },
-      { key: "modal", label: "MODAL", type: "select", options: ["AIR", "LCL", "FCL"] },
-      { key: "currency", label: "CURRENCY" },
+      { key: "agentId", label: "PROVIDER", type: "relation", relation: "agents", relationLabel: ["name"], relationValue: "id" },
+      { key: "modal", label: "MODAL", type: "select", options: modals },
+      { key: "containerType", label: "CONTAINER", type: "select", options: ["", ...containerTypes] },
+      { key: "pol", label: "POL", type: "lookup", relation: "pol", relationLabel: ["code", "name"], relationValue: "code" },
+      { key: "pod", label: "POD", type: "select", options: ["", ...seaDestinations, ...airDestinations] },
+      { key: "currency", label: "CURRENCY", type: "select", options: currencies },
       { key: "amount", label: "AMOUNT", type: "number" },
-      { key: "chargingBasis", label: "CHARGING BASIS" },
+      { key: "chargingBasis", label: "CHARGING BASIS", type: "select", options: ["", "CONTAINER", "SHIPMENT", "BL", "W/M", "CBM", "TON", "PERCENTAGE", "MINIMUM", "MANUAL"] },
+      { key: "validFrom", label: "VALID FROM", type: "date" },
+      { key: "validTo", label: "VALID TO", type: "date" },
       { key: "comparable", label: "COMPARABLE", type: "checkbox" },
     ],
   },
@@ -248,9 +315,66 @@ const modules: ModuleConfig[] = [
     columns: ["rateDate", "fromCurrency", "toCurrency", "rate"],
     fields: [
       { key: "rateDate", label: "RATE DATE", type: "date" },
-      { key: "fromCurrency", label: "FROM CURRENCY" },
-      { key: "toCurrency", label: "TO CURRENCY" },
+      { key: "fromCurrency", label: "FROM CURRENCY", type: "select", options: currencies },
+      { key: "toCurrency", label: "TO CURRENCY", type: "select", options: currencies },
       { key: "rate", label: "RATE", type: "number" },
+    ],
+  },
+  {
+    key: "commercialInvoices",
+    title: "COMMERCIAL INVOICES",
+    group: "DOCUMENTS & PACKING",
+    description: "Shipment invoices with payment terms, currency, amount, and due date risk.",
+    fullPage: true,
+    columns: ["invoiceNumber", "shipmentId", "currency", "amount", "paymentTerms", "ddlDate"],
+    fields: [
+      { key: "shipmentId", label: "SHIPMENT", type: "relation", relation: "shipments", relationLabel: ["shipmentNumber", "reference"], relationValue: "id" },
+      { key: "invoiceNumber", label: "INVOICE NUMBER" },
+      { key: "currency", label: "CURRENCY", type: "select", options: currencies },
+      { key: "amount", label: "TOTAL AMOUNT", type: "number" },
+      { key: "paymentTerms", label: "PAYMENT TERMS", type: "select", options: ["", ...paymentTerms] },
+      { key: "ddlDate", label: "DDL DATE", type: "date" },
+      { key: "risk", label: "RISK" },
+    ],
+  },
+  {
+    key: "packages",
+    title: "PACKING",
+    group: "DOCUMENTS & PACKING",
+    description: "Volumes, dimensions, CBM, gross weight, and stackability.",
+    fullPage: true,
+    columns: ["packageIdentification", "packageType", "quantity", "cbm", "grossWeightKg"],
+    fields: [
+      { key: "shipmentId", label: "SHIPMENT", type: "relation", relation: "shipments", relationLabel: ["shipmentNumber", "reference"], relationValue: "id" },
+      { key: "packageIdentification", label: "VOLUME IDENTIFICATION" },
+      { key: "packageType", label: "PACKAGE TYPE", type: "select", options: packageTypes },
+      { key: "quantity", label: "QUANTITY", type: "number" },
+      { key: "lengthCm", label: "LENGTH", type: "number" },
+      { key: "widthCm", label: "WIDTH", type: "number" },
+      { key: "heightCm", label: "HEIGHT", type: "number" },
+      { key: "dimensionUnit", label: "DIMENSION UNIT", type: "select", options: dimensionUnits },
+      { key: "cbm", label: "CBM", type: "number" },
+      { key: "grossWeightKg", label: "GROSS WEIGHT KG", type: "number" },
+      { key: "stackable", label: "STACKABLE", type: "checkbox" },
+      { key: "stackingLevels", label: "STACKING LEVELS", type: "number" },
+    ],
+  },
+  {
+    key: "containers",
+    title: "CONTAINERS",
+    group: "DOCUMENTS & PACKING",
+    description: "Container numbers, equipment, volumes, CBM, gross weight, and free time.",
+    fullPage: true,
+    columns: ["containerNumber", "equipment", "packageQuantity", "cbm", "grossWeightKg", "freeTimeDeadline"],
+    fields: [
+      { key: "shipmentId", label: "SHIPMENT", type: "relation", relation: "shipments", relationLabel: ["shipmentNumber", "reference"], relationValue: "id" },
+      { key: "containerNumber", label: "CONTAINER NUMBER" },
+      { key: "equipment", label: "EQUIPMENT", type: "select", options: ["", ...containerTypes] },
+      { key: "packageQuantity", label: "PACKAGE QUANTITY", type: "number" },
+      { key: "cbm", label: "CBM", type: "number" },
+      { key: "grossWeightKg", label: "GROSS WEIGHT KG", type: "number" },
+      { key: "freeTimeDays", label: "FREE TIME DAYS", type: "number" },
+      { key: "freeTimeDeadline", label: "FREE TIME DEADLINE", type: "date" },
     ],
   },
   {
@@ -309,6 +433,13 @@ export function ImportIntelligenceApp({
   const filteredRows = rows.filter((row) =>
     JSON.stringify(row).toLowerCase().includes(query.toLowerCase()),
   );
+  const requiredReferences = useMemo(() => {
+    const references = new Set<EntityKey>();
+    active.fields?.forEach((field) => {
+      if (field.relation) references.add(field.relation);
+    });
+    return Array.from(references).filter((reference) => reference !== entityKey);
+  }, [active.fields, entityKey]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = appearance.toLowerCase();
@@ -328,6 +459,21 @@ export function ImportIntelligenceApp({
       cancelled = true;
     };
   }, [entityKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    requiredReferences.forEach((reference) => {
+      fetch(`/api/records/${reference}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (!cancelled) setRowsByEntity((current) => ({ ...current, [reference]: data.rows ?? [] }));
+        })
+        .catch(() => setMessage("RELATED MASTER DATA IS NOT READY"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [requiredReferences]);
 
   const groupedModules = useMemo(() => {
     return modules.reduce<Record<string, ModuleConfig[]>>((groups, module) => {
@@ -537,14 +683,24 @@ export function ImportIntelligenceApp({
                   {projectedStatus ? (
                     <p className="calculated-status">CALCULATED STATUS: {projectedStatus}</p>
                   ) : null}
-                  {active.fields.map((field) => (
-                    <FieldControl
-                      key={field.key}
-                      field={field}
-                      value={draft[field.key]}
-                      onChange={(value) => setDraft((current) => ({ ...current, [field.key]: value }))}
-                    />
-                  ))}
+                  {active.fields.map((field) =>
+                    isFieldVisible(field, draft) ? (
+                      <FieldControl
+                        key={`${field.key}:${String(draft.id ?? "new")}`}
+                        field={field}
+                        value={draft[field.key]}
+                        draft={draft}
+                        referenceRows={field.relation ? rowsByEntity[field.relation] ?? [] : []}
+                        onChange={(value) => setDraft((current) => ({ ...current, [field.key]: value }))}
+                        onQuickAdd={(entity) => {
+                          setActiveKey(entity);
+                          setDraft({});
+                          setEditingId(null);
+                          setMessage(`ADD NEW ${labelize(entity)}`);
+                        }}
+                      />
+                    ) : null,
+                  )}
                 </div>
                 <div className="form-actions">
                   <button type="button" onClick={startNew}>
@@ -571,12 +727,66 @@ export function ImportIntelligenceApp({
 function FieldControl({
   field,
   value,
+  draft,
+  referenceRows,
   onChange,
+  onQuickAdd,
 }: {
   field: Field;
   value: Row[string];
+  draft: Row;
+  referenceRows: Row[];
   onChange: (value: string | number | boolean) => void;
+  onQuickAdd: (entity: EntityKey) => void;
 }) {
+  const [searchValue, setSearchValue] = useState(() => {
+    const selected = findSelectedReference(field, referenceRows, value);
+    return selected ? referenceLabel(field, selected) : String(value ?? "");
+  });
+
+  if (field.type === "relation" || field.type === "lookup") {
+    const options = filterReferenceRows(field, referenceRows, draft);
+    const listId = `${field.key}-options`;
+    return (
+      <label className="field">
+        {field.label}
+        <div className="combo-row">
+          <input
+            list={listId}
+            value={searchValue}
+            placeholder={options.length ? "SEARCH AND SELECT" : "NO MASTER DATA YET"}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setSearchValue(nextValue);
+              if (!nextValue) {
+                onChange("");
+                return;
+              }
+              const selected = options.find((row) => referenceLabel(field, row) === nextValue);
+              if (selected) {
+                const rawValue = selected[field.relationValue ?? "id"];
+                onChange(field.type === "relation" ? Number(rawValue) : String(rawValue ?? ""));
+              }
+            }}
+          />
+          {field.quickAdd ? (
+            <button type="button" title={`Add new ${field.quickAdd}`} onClick={() => onQuickAdd(field.quickAdd!)}>
+              +
+            </button>
+          ) : null}
+        </div>
+        <datalist id={listId}>
+          {options.map((row) => (
+            <option key={String(row.id ?? referenceLabel(field, row))} value={referenceLabel(field, row)} />
+          ))}
+        </datalist>
+        <span className="field-help">
+          {options.length ? "USES MASTER DATA" : "CREATE THE MASTER RECORD FIRST"}
+        </span>
+      </label>
+    );
+  }
+
   if (field.type === "textarea") {
     return (
       <label className="field field-wide">
@@ -621,11 +831,38 @@ function FieldControl({
         type={field.type ?? "text"}
         value={String(value ?? "")}
         onChange={(event) =>
-          onChange(field.type === "number" ? Number(event.target.value) : event.target.value)
+          onChange(field.type === "number" ? (event.target.value === "" ? "" : Number(event.target.value)) : event.target.value)
         }
       />
     </label>
   );
+}
+
+function isFieldVisible(field: Field, draft: Row) {
+  const modal = String(draft.modal ?? "");
+  if (field.key === "cfs" && modal === "AIR") return false;
+  if (field.key === "vessel" && modal === "AIR") return false;
+  return true;
+}
+
+function filterReferenceRows(field: Field, rows: Row[], draft: Row) {
+  if (!field.dependsOn || !field.dependsValueKey) return rows;
+  const expected = draft[field.dependsOn];
+  if (!expected) return rows;
+  return rows.filter((row) => String(row[field.dependsValueKey!] ?? "") === String(expected));
+}
+
+function findSelectedReference(field: Field, rows: Row[], value: Row[string]) {
+  const valueKey = field.relationValue ?? "id";
+  return rows.find((row) => String(row[valueKey] ?? "") === String(value ?? ""));
+}
+
+function referenceLabel(field: Field, row: Row) {
+  const parts = (field.relationLabel ?? ["name"])
+    .map((key) => row[key])
+    .filter((part) => part !== null && part !== undefined && part !== "");
+  const value = row[field.relationValue ?? "id"];
+  return `${parts.join(" / ") || value} [${value}]`;
 }
 
 function Dashboard() {

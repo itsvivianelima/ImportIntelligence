@@ -363,6 +363,26 @@ button:hover,
   padding: 8px 13px;
 }
 
+.combo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+}
+
+.combo-row button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--accent-deep);
+  font-size: 18px;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .global-search input {
   min-height: 42px;
 }
