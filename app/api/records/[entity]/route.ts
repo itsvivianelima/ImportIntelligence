@@ -5,18 +5,25 @@ import {
   commercialInvoices,
   consolidations,
   containers,
+  consolidationShipments,
   demands,
   exchangeRates,
+  freeTimeRules,
   freightContracts,
+  invoiceItems,
   locations,
+  monthlyExchangeRates,
   packages,
   partNumbers,
   publicRates,
   requesters,
+  shipmentCosts,
   shipments,
   shipmentDemands,
+  supplierPartHistory,
   suppliers,
   surcharges,
+  timelineEvents,
 } from "../../../../db/schema";
 import {
   calculateCbm,
@@ -34,6 +41,12 @@ import {
   updateSupabaseRow,
   getSupabaseRow,
   recalculateSupabaseDemandFulfillment,
+  insertSupabaseTimeline,
+  recordInvoiceItemHistory,
+  recalculateSupabaseShipmentSavings,
+  refreshSupabaseContractUsage,
+  propagateSupabaseConsolidation,
+  applySupabaseContainerFreeTime,
 } from "../../../../lib/supabase-store";
 import { buildTransitExcelExport, isReportExport } from "../../../../lib/report-export";
 
@@ -57,6 +70,13 @@ const tableByEntity = {
   packages,
   containers,
   shipmentDemands,
+  invoiceItems,
+  supplierPartHistory,
+  monthlyExchangeRates,
+  shipmentCosts,
+  freeTimeRules,
+  consolidationShipments,
+  timelineEvents,
 } as const;
 
 const entityLabels: Record<EntityKey, string> = {
@@ -77,6 +97,13 @@ const entityLabels: Record<EntityKey, string> = {
   packages: "PACKAGES",
   containers: "CONTAINERS",
   shipmentDemands: "SHIPMENT DEMANDS",
+  invoiceItems: "INVOICE ITEMS",
+  supplierPartHistory: "SUPPLIER PART HISTORY",
+  monthlyExchangeRates: "MONTHLY EXCHANGE RATES",
+  shipmentCosts: "SHIPMENT COSTS",
+  freeTimeRules: "FREE TIME RULES",
+  consolidationShipments: "CONSOLIDATION SHIPMENTS",
+  timelineEvents: "TIMELINE EVENTS",
 };
 
 function routeError(error: unknown) {
@@ -108,6 +135,8 @@ function normalizePayload(entity: EntityKey, payload: Record<string, unknown>) {
   }
 
   if (entity === "shipments") {
+    if (cleaned.pcdIsSet && cleaned.etd && !cleaned.pcd) cleaned.pcd = cleaned.etd;
+    if (cleaned.pcdIsSet && cleaned.eta && !cleaned.initialEta) cleaned.initialEta = cleaned.eta;
     cleaned.status = resolveShipmentStatus(cleaned);
   }
 
@@ -117,6 +146,10 @@ function normalizePayload(entity: EntityKey, payload: Record<string, unknown>) {
 
   if (entity === "packages") {
     cleaned.cbm = calculateCbm(cleaned);
+  }
+
+  if (entity === "invoiceItems" && cleaned.isSample) {
+    cleaned.payableValue = 0;
   }
 
   return cleaned;
@@ -151,6 +184,9 @@ export async function GET(request: Request, context: RouteContext) {
         return buildTransitExcelExport(exportType!, rows, {
           suppliers: await listSupabaseRows("suppliers"),
           partNumbers: entity === "demands" ? await listSupabaseRows("partNumbers") : [],
+          commercialInvoices: entity === "shipments" ? await listSupabaseRows("commercialInvoices") : [],
+          supplierPartHistory: entity === "demands" ? await listSupabaseRows("supplierPartHistory") : [],
+          monthlyExchangeRates: await listSupabaseRows("monthlyExchangeRates"),
         });
       }
       return Response.json({ rows });
@@ -196,6 +232,20 @@ export async function POST(request: Request, context: RouteContext) {
       const demandId = demandIdFromLink(row);
       if (demandId) await recalculateSupabaseDemandFulfillment(demandId);
     }
+    if (entity === "invoiceItems" && useSupabase) {
+      await recordInvoiceItemHistory(Number(row.id));
+    }
+    if ((entity === "shipments" || entity === "containers") && useSupabase) {
+      const shipmentId = entity === "shipments" ? Number(row.id) : Number(row.shipmentId ?? 0);
+      if (shipmentId) await recalculateSupabaseShipmentSavings(shipmentId);
+    }
+    if (entity === "containers" && useSupabase) {
+      await applySupabaseContainerFreeTime(Number(row.id));
+    }
+    if (entity === "consolidationShipments" && useSupabase) {
+      const consolidationId = Number(row.consolidationId ?? 0);
+      if (consolidationId) await propagateSupabaseConsolidation(consolidationId);
+    }
 
     return Response.json({ row }, { status: 201 });
   } catch (error) {
@@ -217,6 +267,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     const values = normalizePayload(entity, payload);
     const useSupabase = await isSupabaseConfigured();
     const previousRow = useSupabase ? await getSupabaseRow(entity, id) : null;
+    if (entity === "shipments" && previousRow) {
+      if (previousRow.pcd && values.pcdIsSet) values.pcd = previousRow.pcd;
+      if (previousRow.initialEta && values.pcdIsSet) values.initialEta = previousRow.initialEta;
+      if (!previousRow.pcd && values.pcdIsSet && values.etd) values.pcd = values.etd;
+      if (!previousRow.initialEta && values.pcdIsSet && values.eta) values.initialEta = values.eta;
+      values.status = resolveShipmentStatus(values);
+    }
     const row = useSupabase
       ? await updateSupabaseRow(entity, id, values)
       : await updateD1Row(entity, id, values);
@@ -230,12 +287,39 @@ export async function PATCH(request: Request, context: RouteContext) {
       previousValue: previousRow ? JSON.stringify(previousRow) : "",
       newValue: row ? JSON.stringify(row) : JSON.stringify(values),
     });
+    if (useSupabase && row) {
+      await insertSupabaseTimeline({
+        entity,
+        entityId: id,
+        previousValue: previousRow ? JSON.stringify(previousRow) : "",
+        newValue: JSON.stringify(row),
+        actorEmail: user.email,
+        notes: "Record updated through IMPORT INTELLIGENCE",
+      });
+    }
 
     if (entity === "shipmentDemands" && useSupabase) {
       const previousDemandId = previousRow ? demandIdFromLink(previousRow) : 0;
       const currentDemandId = row ? demandIdFromLink(row) : demandIdFromLink(values);
       if (previousDemandId) await recalculateSupabaseDemandFulfillment(previousDemandId);
       if (currentDemandId && currentDemandId !== previousDemandId) await recalculateSupabaseDemandFulfillment(currentDemandId);
+    }
+    if (entity === "invoiceItems" && useSupabase) {
+      await recordInvoiceItemHistory(id);
+    }
+    if ((entity === "shipments" || entity === "containers") && useSupabase) {
+      const shipmentId = entity === "shipments" ? id : Number(row?.shipmentId ?? previousRow?.shipmentId ?? 0);
+      if (shipmentId) await recalculateSupabaseShipmentSavings(shipmentId);
+    }
+    if (entity === "containers" && useSupabase) {
+      await applySupabaseContainerFreeTime(id);
+    }
+    if (entity === "consolidations" && useSupabase) {
+      await propagateSupabaseConsolidation(id);
+    }
+    if (entity === "consolidationShipments" && useSupabase) {
+      const consolidationId = Number(row?.consolidationId ?? previousRow?.consolidationId ?? 0);
+      if (consolidationId) await propagateSupabaseConsolidation(consolidationId);
     }
 
     return Response.json({ row });
@@ -276,6 +360,17 @@ export async function DELETE(request: Request, context: RouteContext) {
       const demandId = demandIdFromLink(previousRow);
       if (demandId) await recalculateSupabaseDemandFulfillment(demandId);
     }
+    if (entity === "containers" && useSupabase && previousRow) {
+      const shipmentId = Number(previousRow.shipmentId ?? 0);
+      if (shipmentId) await recalculateSupabaseShipmentSavings(shipmentId);
+    }
+    if (entity === "shipments" && useSupabase && previousRow?.contractId) {
+      await refreshSupabaseContractUsage(Number(previousRow.contractId));
+    }
+    if (entity === "consolidationShipments" && useSupabase && previousRow) {
+      const consolidationId = Number(previousRow.consolidationId ?? 0);
+      if (consolidationId) await propagateSupabaseConsolidation(consolidationId);
+    }
 
     return Response.json({ ok: true });
   } catch (error) {
@@ -311,7 +406,7 @@ async function deleteD1Row(entity: EntityKey, id: number) {
 
 async function insertAudit(
   useSupabase: boolean,
-  values: { entity: string; entityId: number; action: string; actorEmail: string; summary: string },
+  values: { entity: string; entityId: number; action: string; actorEmail: string; summary: string; previousValue?: string; newValue?: string },
 ) {
   if (useSupabase) {
     await insertSupabaseAudit(values);

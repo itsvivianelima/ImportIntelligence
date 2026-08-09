@@ -95,6 +95,11 @@ export const shipments = sqliteTable("shipments", {
   ata: text("ata").notNull().default(""),
   pcd: text("pcd").notNull().default(""),
   deliveryDate: text("delivery_date").notNull().default(""),
+  contractId: integer("contract_id").references(() => freightContracts.id),
+  contractCost: real("contract_cost").notNull().default(0),
+  publicCost: real("public_cost").notNull().default(0),
+  savingAmount: real("saving_amount").notNull().default(0),
+  costCurrency: text("cost_currency").notNull().default(""),
   status: text("status").notNull().default("PLANNED"),
   notes: text("notes").notNull().default(""),
   ...timestamps,
@@ -110,6 +115,45 @@ export const commercialInvoices = sqliteTable("commercial_invoices", {
   ddlDate: text("ddl_date").notNull().default(""),
   risk: text("risk").notNull().default(""),
   ...timestamps,
+});
+
+export const invoiceItems = sqliteTable("invoice_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceId: integer("invoice_id").notNull().references(() => commercialInvoices.id),
+  shipmentId: integer("shipment_id").references(() => shipments.id),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  partNumberId: integer("part_number_id").references(() => partNumbers.id),
+  quantity: real("quantity").notNull().default(0),
+  unitPrice: real("unit_price").notNull().default(0),
+  currency: text("currency").notNull().default(""),
+  netWeightKg: real("net_weight_kg"),
+  grossWeightKg: real("gross_weight_kg"),
+  cbm: real("cbm"),
+  packageType: text("package_type").notNull().default(""),
+  valueKind: text("value_kind").notNull().default("Confirmed / Document Value"),
+  customsValue: real("customs_value").notNull().default(0),
+  payableValue: real("payable_value").notNull().default(0),
+  isSample: integer("is_sample", { mode: "boolean" }).notNull().default(false),
+  ...timestamps,
+});
+
+export const supplierPartHistory = sqliteTable("supplier_part_history", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+  partNumberId: integer("part_number_id").notNull().references(() => partNumbers.id),
+  shipmentId: integer("shipment_id").references(() => shipments.id),
+  invoiceId: integer("invoice_id").references(() => commercialInvoices.id),
+  invoiceItemId: integer("invoice_item_id").references(() => invoiceItems.id),
+  sourceDate: text("source_date"),
+  sourceInvoice: text("source_invoice").notNull().default(""),
+  unitPrice: real("unit_price"),
+  currency: text("currency").notNull().default(""),
+  netWeightKg: real("net_weight_kg"),
+  grossWeightKg: real("gross_weight_kg"),
+  cbm: real("cbm"),
+  packageType: text("package_type").notNull().default(""),
+  valueKind: text("value_kind").notNull().default("Confirmed / Document Value"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const packages = sqliteTable("packages", {
@@ -135,6 +179,36 @@ export const containers = sqliteTable("containers", {
   ...timestamps,
 });
 
+export const monthlyExchangeRates = sqliteTable("monthly_exchange_rates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  usdBrl: real("usd_brl").notNull().default(0),
+  eurBrl: real("eur_brl").notNull().default(0),
+  gbpBrl: real("gbp_brl").notNull().default(0),
+  sekBrl: real("sek_brl").notNull().default(0),
+  ...timestamps,
+});
+
+export const shipmentCosts = sqliteTable("shipment_costs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipmentId: integer("shipment_id").notNull().references(() => shipments.id),
+  costType: text("cost_type").notNull().default("Estimated Cost"),
+  description: text("description").notNull().default(""),
+  currency: text("currency").notNull().default(""),
+  amount: real("amount").notNull().default(0),
+  source: text("source").notNull().default(""),
+  ...timestamps,
+});
+
+export const freeTimeRules = sqliteTable("free_time_rules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  equipment: text("equipment").notNull(),
+  freeTimeDays: integer("free_time_days").notNull().default(0),
+  alertDaysBefore: integer("alert_days_before").notNull().default(3),
+  notes: text("notes").notNull().default(""),
+  ...timestamps,
+});
+
 export const shipmentDemands = sqliteTable("shipment_demands", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   shipmentId: integer("shipment_id").notNull().references(() => shipments.id),
@@ -154,6 +228,14 @@ export const consolidations = sqliteTable("consolidations", {
   status: text("status").notNull().default("OPEN"),
   totalCbm: real("total_cbm").notNull().default(0),
   notes: text("notes").notNull().default(""),
+  ...timestamps,
+});
+
+export const consolidationShipments = sqliteTable("consolidation_shipments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  consolidationId: integer("consolidation_id").notNull().references(() => consolidations.id),
+  shipmentId: integer("shipment_id").notNull().references(() => shipments.id),
+  managedFields: text("managed_fields").notNull().default("cfs,pol,pod,eta,etd,atd,ata"),
   ...timestamps,
 });
 
@@ -217,6 +299,18 @@ export const auditEvents = sqliteTable("audit_events", {
   previousValue: text("previous_value").notNull().default(""),
   newValue: text("new_value").notNull().default(""),
   summary: text("summary").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const timelineEvents = sqliteTable("timeline_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  entity: text("entity").notNull(),
+  entityId: integer("entity_id").notNull(),
+  fieldName: text("field_name").notNull().default(""),
+  previousValue: text("previous_value").notNull().default(""),
+  newValue: text("new_value").notNull().default(""),
+  actorEmail: text("actor_email").notNull().default(""),
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

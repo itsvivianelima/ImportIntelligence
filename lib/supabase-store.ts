@@ -37,6 +37,13 @@ const entityTables: Record<EntityKey, string> = {
   packages: "ii_packages",
   containers: "ii_containers",
   shipmentDemands: "ii_shipment_demands",
+  invoiceItems: "ii_invoice_items",
+  supplierPartHistory: "ii_supplier_part_history",
+  monthlyExchangeRates: "ii_monthly_exchange_rates",
+  shipmentCosts: "ii_shipment_costs",
+  freeTimeRules: "ii_free_time_rules",
+  consolidationShipments: "ii_consolidation_shipments",
+  timelineEvents: "ii_timeline_events",
 };
 
 const dateFields = new Set([
@@ -66,6 +73,7 @@ const dateFields = new Set([
   "hbl_awb_date",
   "free_time_deadline",
   "source_date",
+  "hbl_awb_date",
 ]);
 
 const numericFields = new Set([
@@ -86,6 +94,18 @@ const numericFields = new Set([
   "total_equipment",
   "package_quantity",
   "quantity",
+  "unit_price",
+  "customs_value",
+  "payable_value",
+  "usd_brl",
+  "eur_brl",
+  "gbp_brl",
+  "sek_brl",
+  "contract_cost",
+  "public_cost",
+  "saving_amount",
+  "free_time_days",
+  "alert_days_before",
 ]);
 
 export async function isSupabaseConfigured() {
@@ -213,6 +233,31 @@ export async function insertSupabaseAudit(values: {
   });
 }
 
+export async function insertSupabaseTimeline(values: {
+  entity: string;
+  entityId: number;
+  fieldName?: string;
+  previousValue?: string;
+  newValue?: string;
+  actorEmail?: string;
+  notes?: string;
+}) {
+  await requestSupabase("ii_timeline_events", "POST", {
+    body: [
+      {
+        entity: values.entity,
+        entity_id: values.entityId,
+        field_name: values.fieldName ?? "",
+        previous_value: values.previousValue ?? "",
+        new_value: values.newValue ?? "",
+        actor_email: values.actorEmail ?? "",
+        notes: values.notes ?? "",
+      },
+    ],
+    prefer: "return=minimal",
+  });
+}
+
 export async function recalculateSupabaseDemandFulfillment(demandId: number) {
   const demand = await getSupabaseRow("demands", demandId);
   if (!demand) return null;
@@ -234,6 +279,178 @@ export async function recalculateSupabaseDemandFulfillment(demandId: number) {
     excessQuantity,
     status,
   });
+}
+
+export async function recordInvoiceItemHistory(invoiceItemId: number) {
+  const item = await getSupabaseRow("invoiceItems", invoiceItemId);
+  if (!item || item.valueKind === "Estimated / Auto-filled") return null;
+  const supplierId = Number(item.supplierId ?? 0);
+  const partNumberId = Number(item.partNumberId ?? 0);
+  if (!supplierId || !partNumberId) return null;
+
+  let invoice: Record<string, unknown> | null = null;
+  const invoiceId = Number(item.invoiceId ?? 0);
+  if (invoiceId) {
+    const rows = await requestSupabase<Record<string, unknown>[]>("ii_commercial_invoices", "GET", {
+      query: `select=*&id=eq.${invoiceId}&limit=1`,
+    });
+    invoice = rows[0] ? fromSnakeRow(rows[0]) : null;
+  }
+
+  const [history] = await requestSupabase<Record<string, unknown>[]>("ii_supplier_part_history", "POST", {
+    body: [
+      toSnakeRow({
+        supplierId,
+        partNumberId,
+        shipmentId: item.shipmentId,
+        invoiceId: item.invoiceId,
+        invoiceItemId,
+        sourceDate: invoice?.ddlDate || new Date().toISOString().slice(0, 10),
+        sourceInvoice: invoice?.invoiceNumber || "",
+        unitPrice: item.unitPrice,
+        currency: item.currency,
+        netWeightKg: item.netWeightKg,
+        grossWeightKg: item.grossWeightKg,
+        cbm: item.cbm,
+        packageType: item.packageType,
+        valueKind: item.valueKind,
+      }),
+    ],
+    prefer: "return=representation",
+  });
+  return fromSnakeRow(history);
+}
+
+export async function recalculateSupabaseShipmentSavings(shipmentId: number) {
+  const shipment = await getSupabaseRow("shipments", shipmentId);
+  if (!shipment) return null;
+
+  const contractId = Number(shipment.contractId ?? 0);
+  if (!contractId) return shipment;
+
+  const [contractRows, containerRows, publicRateRows, surchargeRows] = await Promise.all([
+    requestSupabase<Record<string, unknown>[]>("ii_freight_contracts", "GET", {
+      query: `select=*&id=eq.${contractId}&limit=1`,
+    }),
+    requestSupabase<Record<string, unknown>[]>("ii_containers", "GET", {
+      query: `select=*&shipment_id=eq.${shipmentId}`,
+    }),
+    requestSupabase<Record<string, unknown>[]>("ii_public_rates", "GET", {
+      query: `select=*&modal=eq.${encodeURIComponent(String(shipment.modal ?? ""))}`,
+    }),
+    requestSupabase<Record<string, unknown>[]>("ii_surcharges", "GET", {
+      query: `select=*&modal=eq.${encodeURIComponent(String(shipment.modal ?? ""))}&comparable=eq.true`,
+    }),
+  ]);
+
+  const contract = contractRows[0] ? fromSnakeRow(contractRows[0]) : null;
+  if (!contract) return shipment;
+
+  const containers = containerRows.map(fromSnakeRow);
+  const equipmentCount = Math.max(1, containers.length || 0);
+  const contractRate = Number(contract.rate ?? 0);
+  const comparableSurcharges = surchargeRows.map(fromSnakeRow).reduce((total, row) => total + Number(row.amount ?? 0) * equipmentCount, 0);
+  const publicRate = findMatchingPublicRate(publicRateRows.map(fromSnakeRow), shipment, containers);
+  const publicOcean = Number(publicRate?.rate ?? 0) * equipmentCount;
+  const contractCost = contractRate * equipmentCount + comparableSurcharges;
+  const publicCost = publicOcean + comparableSurcharges;
+  const savingAmount = publicCost - contractCost;
+
+  const updated = await updateSupabaseRow("shipments", shipmentId, {
+    contractCost,
+    publicCost,
+    savingAmount,
+    costCurrency: contract.currency || publicRate?.currency || "",
+  });
+
+  await refreshSupabaseContractUsage(contractId);
+  return updated;
+}
+
+export async function refreshSupabaseContractUsage(contractId: number) {
+  const shipments = await requestSupabase<Record<string, unknown>[]>("ii_shipments", "GET", {
+    query: `select=id&contract_id=eq.${contractId}`,
+  });
+  let usedCount = 0;
+  for (const shipment of shipments) {
+    const containers = await requestSupabase<Record<string, unknown>[]>("ii_containers", "GET", {
+      query: `select=id&shipment_id=eq.${shipment.id}`,
+    });
+    usedCount += Math.max(1, containers.length || 0);
+  }
+  await updateSupabaseRow("freightContracts", contractId, { usedCount });
+}
+
+export async function propagateSupabaseConsolidation(consolidationId: number) {
+  const consolidation = await getSupabaseRow("consolidations", consolidationId);
+  if (!consolidation) return;
+
+  const links = await requestSupabase<Record<string, unknown>[]>("ii_consolidation_shipments", "GET", {
+    query: `select=*&consolidation_id=eq.${consolidationId}`,
+  });
+
+  const sharedValues = {
+    cfs: consolidation.cfs,
+    pol: consolidation.pol,
+    pod: consolidation.pod,
+    eta: consolidation.eta,
+    status: consolidation.status,
+  };
+
+  for (const link of links.map(fromSnakeRow)) {
+    const shipmentId = Number(link.shipmentId ?? 0);
+    if (shipmentId) await updateSupabaseRow("shipments", shipmentId, sharedValues);
+  }
+}
+
+export async function applySupabaseContainerFreeTime(containerId: number) {
+  const container = await getSupabaseRow("containers", containerId);
+  if (!container) return null;
+  const shipmentId = Number(container.shipmentId ?? 0);
+  if (!shipmentId) return container;
+
+  const shipment = await getSupabaseRow("shipments", shipmentId);
+  if (!shipment?.ata) return container;
+
+  let freeTimeDays = Number(container.freeTimeDays ?? 0);
+  if (!freeTimeDays && container.equipment) {
+    const rules = await requestSupabase<Record<string, unknown>[]>("ii_free_time_rules", "GET", {
+      query: `select=*&equipment=eq.${encodeURIComponent(String(container.equipment))}&limit=1`,
+    });
+    freeTimeDays = Number(rules[0]?.free_time_days ?? 0);
+  }
+  if (!freeTimeDays) return container;
+
+  return await updateSupabaseRow("containers", containerId, {
+    freeTimeDays,
+    freeTimeDeadline: addDays(String(shipment.ata), freeTimeDays),
+  });
+}
+
+function addDays(dateValue: string, days: number) {
+  const date = new Date(`${dateValue}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function findMatchingPublicRate(rates: Record<string, unknown>[], shipment: Record<string, unknown>, containers: Record<string, unknown>[]) {
+  return (
+    rates.find((rate) => matchesRate(rate, shipment, containers[0]?.equipment)) ??
+    rates.find((rate) => matchesRate(rate, shipment, "")) ??
+    rates[0] ??
+    null
+  );
+}
+
+function matchesRate(rate: Record<string, unknown>, shipment: Record<string, unknown>, equipment: unknown) {
+  const pol = String(rate.pol ?? "ALL");
+  const pod = String(rate.pod ?? "ALL");
+  const containerType = String(rate.containerType ?? "Todos");
+  return (
+    (pol === "ALL" || pol === String(shipment.pol ?? "")) &&
+    (pod === "ALL" || pod === String(shipment.pod ?? "")) &&
+    (containerType === "Todos" || !equipment || containerType === String(equipment))
+  );
 }
 
 function resolveDemandStatusForQuantities(requestedQuantity: number, shippedQuantity: number, manuallyClosed: boolean) {
