@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../../../../db";
 import {
   agents,
   auditEvents,
@@ -25,6 +24,14 @@ import {
   type EntityKey,
 } from "../../../../lib/domain";
 import { getCurrentAppUser } from "../../../../lib/auth";
+import {
+  createSupabaseRow,
+  deleteSupabaseRow,
+  insertSupabaseAudit,
+  isSupabaseConfigured,
+  listSupabaseRows,
+  updateSupabaseRow,
+} from "../../../../lib/supabase-store";
 
 type RouteContext = { params: Promise<{ entity: string }> };
 
@@ -127,10 +134,13 @@ function rowTitle(entity: EntityKey, values: Record<string, unknown>) {
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const entity = await resolveEntity(context.params);
-    const db = getDb();
+    if (await isSupabaseConfigured()) {
+      return Response.json({ rows: await listSupabaseRows(entity) });
+    }
+
+    const db = await getDatabase();
     const table = tableByEntity[entity];
     const rows = await db.select().from(table).limit(200);
-
     const filtered =
       entity === "pol" || entity === "cfs"
         ? rows.filter((row) => row.kind === entity.toUpperCase())
@@ -151,13 +161,14 @@ export async function POST(request: Request, context: RouteContext) {
     const entity = await resolveEntity(context.params);
     const payload = (await request.json()) as Record<string, unknown>;
     const values = normalizePayload(entity, payload);
-    const db = getDb();
-    const table = tableByEntity[entity];
-    const [row] = await db.insert(table).values(values).returning();
+    const useSupabase = await isSupabaseConfigured();
+    const row = useSupabase
+      ? await createSupabaseRow(entity, values)
+      : await createD1Row(entity, values);
 
-    await db.insert(auditEvents).values({
+    await insertAudit(useSupabase, {
       entity,
-      entityId: row.id,
+      entityId: Number(row.id),
       action: "CREATE",
       actorEmail: user.email,
       summary: `Created ${rowTitle(entity, row)}`,
@@ -181,11 +192,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!id) return Response.json({ error: "id is required" }, { status: 400 });
 
     const values = normalizePayload(entity, payload);
-    const db = getDb();
-    const table = tableByEntity[entity];
-    const [row] = await db.update(table).set(values).where(eq(table.id, id)).returning();
+    const useSupabase = await isSupabaseConfigured();
+    const row = useSupabase
+      ? await updateSupabaseRow(entity, id, values)
+      : await updateD1Row(entity, id, values);
 
-    await db.insert(auditEvents).values({
+    await insertAudit(useSupabase, {
       entity,
       entityId: id,
       action: "UPDATE",
@@ -210,10 +222,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     const id = Number(searchParams.get("id"));
     if (!id) return Response.json({ error: "id is required" }, { status: 400 });
 
-    const db = getDb();
-    const table = tableByEntity[entity];
-    await db.delete(table).where(eq(table.id, id));
-    await db.insert(auditEvents).values({
+    const useSupabase = await isSupabaseConfigured();
+    if (useSupabase) {
+      await deleteSupabaseRow(entity, id);
+    } else {
+      await deleteD1Row(entity, id);
+    }
+
+    await insertAudit(useSupabase, {
       entity,
       entityId: id,
       action: "DELETE",
@@ -226,4 +242,42 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (error instanceof Response) return error;
     return Response.json({ error: routeError(error) }, { status: 500 });
   }
+}
+
+async function getDatabase() {
+  const { getDb } = await import("../../../../db");
+  return getDb();
+}
+
+async function createD1Row(entity: EntityKey, values: Record<string, unknown>) {
+  const db = await getDatabase();
+  const table = tableByEntity[entity];
+  const [row] = await db.insert(table).values(values).returning();
+  return row as Record<string, unknown>;
+}
+
+async function updateD1Row(entity: EntityKey, id: number, values: Record<string, unknown>) {
+  const db = await getDatabase();
+  const table = tableByEntity[entity];
+  const [row] = await db.update(table).set(values).where(eq(table.id, id)).returning();
+  return (row ?? null) as Record<string, unknown> | null;
+}
+
+async function deleteD1Row(entity: EntityKey, id: number) {
+  const db = await getDatabase();
+  const table = tableByEntity[entity];
+  await db.delete(table).where(eq(table.id, id));
+}
+
+async function insertAudit(
+  useSupabase: boolean,
+  values: { entity: string; entityId: number; action: string; actorEmail: string; summary: string },
+) {
+  if (useSupabase) {
+    await insertSupabaseAudit(values);
+    return;
+  }
+
+  const db = await getDatabase();
+  await db.insert(auditEvents).values(values);
 }

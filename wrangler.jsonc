@@ -17,12 +17,5 @@
   ],
   "observability": {
     "enabled": true
-  },
-  "rules": [
-    {
-      "type": "ESModule",
-      "globs": ["**/*.js", "**/*.mjs"]
-    }
-  ],
-  "no_bundle": true
+  }
 }

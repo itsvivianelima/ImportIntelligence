@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../../../db";
 import { appUsers } from "../../../db/schema";
 import {
   appHasUsers,
@@ -7,6 +6,11 @@ import {
   createSession,
   verifyPassword,
 } from "../../../lib/auth";
+import {
+  createSupabaseUser,
+  findSupabaseUserByEmail,
+  isSupabaseConfigured,
+} from "../../../lib/supabase-store";
 
 type AuthPayload = {
   mode?: "login" | "bootstrap";
@@ -47,8 +51,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Password must have at least 8 characters." }, { status: 400 });
     }
 
-    const db = getDb();
     const secure = new URL(request.url).protocol === "https:";
+    const useSupabase = await isSupabaseConfigured();
 
     if (mode === "bootstrap") {
       if (await appHasUsers()) {
@@ -56,16 +60,17 @@ export async function POST(request: Request) {
       }
 
       const { hash, salt } = await createPasswordHash(password);
-      const [user] = await db
-        .insert(appUsers)
-        .values({
-          email,
-          displayName,
-          passwordHash: hash,
-          passwordSalt: salt,
-          role: "ADMIN",
-        })
-        .returning();
+      const user = useSupabase
+        ? await createSupabaseUser({
+            email,
+            displayName,
+            passwordHash: hash,
+            passwordSalt: salt,
+            role: "ADMIN",
+          })
+        : await createD1User({ email, displayName, passwordHash: hash, passwordSalt: salt });
+
+      if (!user) throw new Error("Could not create the first admin user.");
 
       return Response.json(
         { user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } },
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const [user] = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+    const user = useSupabase ? await findSupabaseUserByEmail(email) : await findD1UserByEmail(email);
     if (!user || !(await verifyPassword(password, user.passwordSalt, user.passwordHash))) {
       return Response.json({ error: "Invalid email or password." }, { status: 401 });
     }
@@ -85,4 +90,35 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: authError(error) }, { status: 500 });
   }
+}
+
+async function getDatabase() {
+  const { getDb } = await import("../../../db");
+  return getDb();
+}
+
+async function findD1UserByEmail(email: string) {
+  const db = await getDatabase();
+  const [user] = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+  return user ?? null;
+}
+
+async function createD1User(input: {
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  passwordSalt: string;
+}) {
+  const db = await getDatabase();
+  const [user] = await db
+    .insert(appUsers)
+    .values({
+      email: input.email,
+      displayName: input.displayName,
+      passwordHash: input.passwordHash,
+      passwordSalt: input.passwordSalt,
+      role: "ADMIN",
+    })
+    .returning();
+  return user ?? null;
 }

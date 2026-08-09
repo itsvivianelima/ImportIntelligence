@@ -1,6 +1,13 @@
 import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { appSessions, appUsers } from "../db/schema";
+import {
+  createSupabaseSession,
+  deleteSupabaseSession,
+  findSupabaseUserBySession,
+  isSupabaseConfigured,
+  supabaseAppHasUsers,
+} from "./supabase-store";
 
 export type AppUser = {
   id: number;
@@ -19,6 +26,10 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     if (!token) return null;
 
     const tokenHash = await sha256(token);
+    if (await isSupabaseConfigured()) {
+      return await findSupabaseUserBySession(tokenHash, new Date().toISOString());
+    }
+
     const db = await getDatabase();
     const [row] = await db
       .select({
@@ -39,6 +50,10 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
 }
 
 export async function appHasUsers() {
+  if (await isSupabaseConfigured()) {
+    return supabaseAppHasUsers();
+  }
+
   const db = await getDatabase();
   const [user] = await db.select({ id: appUsers.id }).from(appUsers).limit(1);
   return Boolean(user);
@@ -60,6 +75,12 @@ export async function createSession(userId: number, secure: boolean) {
   const token = randomToken(32);
   const tokenHash = await sha256(token);
   const expiresAt = new Date(Date.now() + sessionDays * 24 * 60 * 60 * 1000);
+
+  if (await isSupabaseConfigured()) {
+    await createSupabaseSession(userId, tokenHash, expiresAt.toISOString());
+    return buildSessionCookie(token, expiresAt, secure);
+  }
+
   const db = await getDatabase();
   await db.insert(appSessions).values({
     userId,
@@ -75,8 +96,13 @@ export async function clearSessionCookie() {
   const token = cookieStore.get(sessionCookieName)?.value;
   if (token) {
     try {
-      const db = await getDatabase();
-      await db.delete(appSessions).where(eq(appSessions.tokenHash, await sha256(token)));
+      const tokenHash = await sha256(token);
+      if (await isSupabaseConfigured()) {
+        await deleteSupabaseSession(tokenHash);
+      } else {
+        const db = await getDatabase();
+        await db.delete(appSessions).where(eq(appSessions.tokenHash, tokenHash));
+      }
     } catch {
       // Sign out must still clear the browser cookie if storage is unavailable.
     }
