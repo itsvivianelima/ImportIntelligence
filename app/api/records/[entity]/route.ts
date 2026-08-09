@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getDb } from "../../../../db";
 import {
   agents,
@@ -25,6 +24,7 @@ import {
   resolveShipmentStatus,
   type EntityKey,
 } from "../../../../lib/domain";
+import { getCurrentAppUser } from "../../../../lib/auth";
 
 type RouteContext = { params: Promise<{ entity: string }> };
 
@@ -145,7 +145,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getCurrentAppUser();
     if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
     const entity = await resolveEntity(context.params);
@@ -172,7 +172,7 @@ export async function POST(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getCurrentAppUser();
     if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
     const entity = await resolveEntity(context.params);
@@ -202,7 +202,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   try {
-    const user = await getChatGPTUser();
+    const user = await getCurrentAppUser();
     if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
     const entity = await resolveEntity(context.params);

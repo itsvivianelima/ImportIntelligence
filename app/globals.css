@@ -140,6 +140,12 @@ button:hover,
   color: #fff;
 }
 
+.login-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 .app-shell {
   display: grid;
   min-height: 100vh;

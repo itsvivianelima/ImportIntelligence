@@ -31,9 +31,8 @@ test("server-renders the IMPORT INTELLIGENCE login", async () => {
   const html = await response.text();
   assert.match(html, /<title>IMPORT INTELLIGENCE<\/title>/i);
   assert.match(html, /IMPORT MANAGEMENT PLATFORM/);
-  assert.match(html, /SIGN IN/);
-  assert.match(html, /empty greenfield database/i);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+  assert.match(html, /CREATE FIRST ADMIN|SIGN IN/);
+  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton|signin-with-chatgpt/i);
 });
 
 test("keeps the greenfield product name and database binding", async () => {
@@ -51,5 +50,5 @@ test("keeps the greenfield product name and database binding", async () => {
   assert.match(hosting, /"d1": "DB"/);
   assert.match(migration, /CREATE TABLE `shipments`/);
   assert.match(migration, /`delivery_date` text DEFAULT '' NOT NULL/);
-  assert.doesNotMatch(page + layout + packageJson, /MAERSK CONTRACT VISIBILITY|FREIGHT CONTRACTS VISIBILITY|SHIPMENT INTELLIGENCE/);
+  assert.doesNotMatch(page + layout + packageJson, /MAERSK CONTRACT VISIBILITY|FREIGHT CONTRACTS VISIBILITY|SHIPMENT INTELLIGENCE|ChatGPT|chatgpt/i);
 });
