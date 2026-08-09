@@ -33,7 +33,7 @@ type Field = {
 };
 
 type ModuleConfig = {
-  key: EntityKey | "dashboard" | "reports" | "insights" | "settings" | "audit";
+  key: EntityKey | "dashboard" | "supplierFollowUp" | "reports" | "insights" | "settings" | "audit";
   title: string;
   group: string;
   description: string;
@@ -50,6 +50,12 @@ const modules: ModuleConfig[] = [
     title: "DASHBOARD",
     group: "CONTROL",
     description: "Operational control center for open import work.",
+  },
+  {
+    key: "supplierFollowUp",
+    title: "SUPPLIER FOLLOW-UP",
+    group: "CONTROL",
+    description: "Coming due, due today, overdue, partially fulfilled, and pending supplier demand follow-up.",
   },
   {
     key: "demands",
@@ -539,16 +545,8 @@ const modules: ModuleConfig[] = [
   },
 ];
 
-const quickStats = [
-  "OPEN DEMANDS",
-  "ACTIVE SHIPMENTS",
-  "CONFIRMED ARRIVALS",
-  "DELIVERED",
-  "CONSOLIDATIONS",
-  "SAVINGS",
-];
-
 const emptyForm: Row = {};
+const dashboardEntities: EntityKey[] = ["demands", "shipments", "containers", "suppliers", "partNumbers"];
 
 export function ImportIntelligenceApp({
   user,
@@ -601,6 +599,22 @@ export function ImportIntelligenceApp({
       cancelled = true;
     };
   }, [entityKey]);
+
+  useEffect(() => {
+    if (!["dashboard", "supplierFollowUp", "reports", "insights"].includes(String(active.key))) return;
+    let cancelled = false;
+    dashboardEntities.forEach((reference) => {
+      fetch(`/api/records/${reference}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (!cancelled) setRowsByEntity((current) => ({ ...current, [reference]: data.rows ?? [] }));
+        })
+        .catch(() => setMessage("OPERATIONAL DATA IS NOT READY"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active.key]);
 
   useEffect(() => {
     let cancelled = false;
@@ -765,9 +779,10 @@ export function ImportIntelligenceApp({
               {entityKey ? <button onClick={startNew}>NEW RECORD</button> : null}
             </div>
 
-            {active.key === "dashboard" ? <Dashboard /> : null}
-            {active.key === "reports" ? <Reports /> : null}
-            {active.key === "insights" ? <Insights /> : null}
+            {active.key === "dashboard" ? <Dashboard rowsByEntity={rowsByEntity} /> : null}
+            {active.key === "supplierFollowUp" ? <SupplierFollowUp rowsByEntity={rowsByEntity} /> : null}
+            {active.key === "reports" ? <Reports rowsByEntity={rowsByEntity} /> : null}
+            {active.key === "insights" ? <Insights rowsByEntity={rowsByEntity} /> : null}
             {active.key === "settings" ? (
               <Settings appearance={appearance} onAppearanceChange={setAppearance} />
             ) : null}
@@ -1007,7 +1022,24 @@ function referenceLabel(field: Field, row: Row) {
   return `${parts.join(" / ") || value} [${value}]`;
 }
 
-function Dashboard() {
+function Dashboard({ rowsByEntity }: { rowsByEntity: Record<string, Row[]> }) {
+  const demands = rowsByEntity.demands ?? [];
+  const shipments = rowsByEntity.shipments ?? [];
+  const containers = rowsByEntity.containers ?? [];
+  const activeShipments = shipments.filter((shipment) => shipment.status !== "Delivered");
+  const confirmedArrivals = shipments.filter((shipment) => shipment.status === "Confirmed Arrival");
+  const delivered = shipments.filter((shipment) => shipment.status === "Delivered");
+  const savings = shipments.reduce((total, shipment) => total + Number(shipment.savingAmount ?? 0), 0);
+  const alerts = buildOperationalAlerts(demands, shipments, containers);
+  const stats = [
+    ["OPEN DEMANDS", demands.filter((demand) => demand.status === "Open" || demand.status === "Partially Fulfilled").length],
+    ["ACTIVE SHIPMENTS", activeShipments.length],
+    ["CONFIRMED ARRIVALS", confirmedArrivals.length],
+    ["DELIVERED", delivered.length],
+    ["FREE TIME ALERTS", alerts.filter((alert) => alert.kind === "FREE TIME").length],
+    ["SAVINGS", savings],
+  ];
+
   return (
     <>
       <section className="welcome-card">
@@ -1016,22 +1048,71 @@ function Dashboard() {
           <h2>IMPORT INTELLIGENCE</h2>
           <p>Connected import management with an empty operational database ready for real records.</p>
         </div>
-        <span className="connection-badge">DATABASE EMPTY</span>
+        <span className="connection-badge">{demands.length || shipments.length ? "LIVE DATA" : "DATABASE EMPTY"}</span>
       </section>
       <div className="dashboard-grid">
-        {quickStats.map((stat) => (
+        {stats.map(([stat, value]) => (
           <article key={stat} className="metric">
             <span>{stat}</span>
-            <strong>0</strong>
-            <small>NO RECORDS</small>
+            <strong>{String(value)}</strong>
+            <small>{Number(value) ? "REAL RECORDS" : "NO RECORDS"}</small>
           </article>
         ))}
       </div>
+      <AlertList alerts={alerts.slice(0, 8)} />
     </>
   );
 }
 
-function Reports() {
+function SupplierFollowUp({ rowsByEntity }: { rowsByEntity: Record<string, Row[]> }) {
+  const demands = rowsByEntity.demands ?? [];
+  const suppliers = new Map((rowsByEntity.suppliers ?? []).map((supplier) => [String(supplier.id), supplier]));
+  const alerts = buildDemandAlerts(demands).sort((left, right) => left.rank - right.rank);
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PRIORITY</th>
+            <th>DEMAND</th>
+            <th>SUPPLIER</th>
+            <th>READINESS</th>
+            <th>STATUS</th>
+            <th>SALDO OPERATIONAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {alerts.length ? (
+            alerts.map((alert) => (
+              <tr key={`${alert.label}-${alert.id}`}>
+                <td>{alert.label}</td>
+                <td>{alert.reference}</td>
+                <td>{suppliers.get(String(alert.supplierId))?.name ?? "-"}</td>
+                <td>{alert.date}</td>
+                <td>{alert.status}</td>
+                <td>{alert.balance}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={6}>
+                <div className="empty-state">
+                  <strong>NO SUPPLIER FOLLOW-UP ALERTS</strong>
+                  <span>Demand follow-up will appear after real demand readiness dates exist.</span>
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Reports({ rowsByEntity }: { rowsByEntity: Record<string, Row[]> }) {
+  const shipments = rowsByEntity.shipments ?? [];
+  const demands = rowsByEntity.demands ?? [];
   return (
     <div className="report-grid">
       {[
@@ -1042,7 +1123,7 @@ function Reports() {
       ].map(([report, exportPath]) => (
         <article key={report}>
           <h3>{report}</h3>
-          <p>Waiting for operational history. No fake production data is loaded.</p>
+          <p>{shipments.length || demands.length ? "Uses real filtered database records. No fake production data is loaded." : "Waiting for operational history. No fake production data is loaded."}</p>
           {exportPath ? (
             <a className="export-link" href={exportPath}>
               EXPORT EXCEL
@@ -1054,17 +1135,85 @@ function Reports() {
   );
 }
 
-function Insights() {
+function Insights({ rowsByEntity }: { rowsByEntity: Record<string, Row[]> }) {
+  const alerts = buildOperationalAlerts(rowsByEntity.demands ?? [], rowsByEntity.shipments ?? [], rowsByEntity.containers ?? []);
   return (
     <div className="report-grid">
-      {["EXECUTIVE OVERVIEW", "OPERATIONAL PERFORMANCE", "SUPPLIERS & AGENTS", "CONTRACTS & COSTS", "DEMAND & PIPELINE"].map((report) => (
+      {[
+        ["EXECUTIVE OVERVIEW", `${alerts.length} active operational alerts`],
+        ["OPERATIONAL PERFORMANCE", "Performance will use delivered shipments and dates"],
+        ["SUPPLIERS & AGENTS", `${(rowsByEntity.suppliers ?? []).length} suppliers registered`],
+        ["CONTRACTS & COSTS", `${(rowsByEntity.shipments ?? []).reduce((total, shipment) => total + Number(shipment.savingAmount ?? 0), 0)} saved by current shipment data`],
+        ["DEMAND & PIPELINE", `${(rowsByEntity.demands ?? []).length} demands in database`],
+      ].map(([report, text]) => (
         <article key={report}>
           <h3>{report}</h3>
-          <p>Insights will calculate after real demands, shipments, costs, and delivery dates exist.</p>
+          <p>{text}</p>
         </article>
       ))}
     </div>
   );
+}
+
+function AlertList({ alerts }: { alerts: ReturnType<typeof buildOperationalAlerts> }) {
+  if (!alerts.length) return null;
+  return (
+    <div className="alert-list">
+      {alerts.map((alert) => (
+        <article key={`${alert.kind}-${alert.id}-${alert.label}`}>
+          <strong>{alert.kind}</strong>
+          <span>{alert.label}: {alert.reference}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function buildOperationalAlerts(demands: Row[], shipments: Row[], containers: Row[]) {
+  return [
+    ...buildDemandAlerts(demands).map((alert) => ({ ...alert, kind: "SUPPLIER FOLLOW-UP" })),
+    ...shipments
+      .filter((shipment) => shipment.status === "Confirmed Arrival")
+      .map((shipment) => ({ kind: "STOCK ENTRY", id: shipment.id, label: "CONFIRMED ARRIVAL WAITING STOCK ENTRY", reference: String(shipment.shipmentNumber ?? shipment.reference ?? shipment.id) })),
+    ...containers
+      .filter((container) => isComingDue(container.freeTimeDeadline))
+      .map((container) => ({ kind: "FREE TIME", id: container.id, label: "FREE TIME NEAR DEADLINE", reference: String(container.containerNumber ?? container.id) })),
+  ];
+}
+
+function buildDemandAlerts(demands: Row[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return demands
+    .map((demand) => {
+      const requested = Number(demand.requestedQuantity ?? 0);
+      const fulfilled = Number(demand.fulfilledQuantity ?? demand.shippedQuantity ?? 0);
+      const balance = Math.max(0, requested - fulfilled);
+      if (!balance || demand.status === "Closed" || demand.status === "Fulfilled") return null;
+      const date = String(demand.readinessDate || demand.requiredDate || "");
+      const days = date ? Math.ceil((new Date(`${date}T00:00:00`).getTime() - today.getTime()) / 86400000) : 9999;
+      const label = days < 0 ? "OVERDUE" : days === 0 ? "DUE TODAY" : days <= 5 ? "COMING DUE" : "FUTURE";
+      return {
+        id: demand.id,
+        supplierId: demand.supplierId,
+        reference: String(demand.demandNumber ?? demand.reference ?? demand.id),
+        date,
+        status: String(demand.status ?? "Open"),
+        balance,
+        label,
+        rank: label === "OVERDUE" ? 1 : label === "DUE TODAY" ? 2 : label === "COMING DUE" ? 3 : 4,
+      };
+    })
+    .filter((alert): alert is NonNullable<typeof alert> => Boolean(alert))
+    .filter((alert) => alert.label !== "FUTURE");
+}
+
+function isComingDue(dateValue: Row[string]) {
+  if (!dateValue) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.ceil((new Date(`${dateValue}T00:00:00`).getTime() - today.getTime()) / 86400000);
+  return days >= 0 && days <= 3;
 }
 
 function Settings({

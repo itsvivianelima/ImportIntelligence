@@ -540,7 +540,8 @@ button:hover,
 }
 
 .dashboard-grid,
-.report-grid {
+.report-grid,
+.alert-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
@@ -548,6 +549,7 @@ button:hover,
 
 .metric,
 .report-grid article,
+.alert-list article,
 .settings-panel {
   display: grid;
   gap: 6px;
@@ -556,6 +558,25 @@ button:hover,
   background: var(--panel);
   padding: 18px;
   box-shadow: 0 8px 25px rgb(36 55 84 / 0.055);
+}
+
+.alert-list {
+  margin-top: 14px;
+}
+
+.alert-list article {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+
+.alert-list article strong {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.alert-list article span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .metric span,
