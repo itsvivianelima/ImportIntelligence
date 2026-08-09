@@ -30,7 +30,7 @@ test("server-renders the IMPORT INTELLIGENCE login", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>IMPORT INTELLIGENCE<\/title>/i);
-  assert.match(html, /IMPORT MANAGEMENT PLATFORM/);
+  assert.match(html, /IMPORT OPERATIONS CONTROL/);
   assert.match(html, /CREATE FIRST ADMIN|SIGN IN/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton|signin-with-chatgpt/i);
 });

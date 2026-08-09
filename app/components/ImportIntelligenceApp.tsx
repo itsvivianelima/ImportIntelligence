@@ -630,15 +630,25 @@ function FieldControl({
 
 function Dashboard() {
   return (
-    <div className="dashboard-grid">
-      {quickStats.map((stat) => (
-        <article key={stat} className="metric">
-          <span>{stat}</span>
-          <strong>0</strong>
-          <small>NO RECORDS</small>
-        </article>
-      ))}
-    </div>
+    <>
+      <section className="welcome-card">
+        <div>
+          <p className="eyebrow">IMPORT OPERATIONS CONTROL</p>
+          <h2>IMPORT INTELLIGENCE</h2>
+          <p>Connected import management with an empty operational database ready for real records.</p>
+        </div>
+        <span className="connection-badge">DATABASE EMPTY</span>
+      </section>
+      <div className="dashboard-grid">
+        {quickStats.map((stat) => (
+          <article key={stat} className="metric">
+            <span>{stat}</span>
+            <strong>0</strong>
+            <small>NO RECORDS</small>
+          </article>
+        ))}
+      </div>
+    </>
   );
 }
 

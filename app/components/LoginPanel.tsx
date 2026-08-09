@@ -39,48 +39,58 @@ export function LoginPanel() {
 
   return (
     <main className="login-shell">
-      <section className="login-panel" aria-labelledby="login-title">
-        <div className="brand-mark">II</div>
-        <p className="login-kicker">IMPORT MANAGEMENT PLATFORM</p>
-        <h1 id="login-title">IMPORT INTELLIGENCE</h1>
+      <section className="login-brand-panel">
+        <div className="brand-mark hero-mark">II</div>
+        <p className="login-kicker">IMPORT OPERATIONS CONTROL</p>
+        <h1>IMPORT INTELLIGENCE</h1>
         <p>
-          {mode === "bootstrap"
-            ? "Create the first administrator account for this new empty IMPORT INTELLIGENCE environment."
-            : "Sign in with your IMPORT INTELLIGENCE account to manage import operations."}
+          Precision workspace for suppliers, demands, shipments, freight contracts,
+          delivery dates, and import performance.
         </p>
-        <form className="login-form" onSubmit={submit}>
-          {mode === "bootstrap" ? (
+      </section>
+      <section className="login-panel" aria-labelledby="login-title">
+        <div className="login-card">
+          <p className="login-kicker">SECURE ACCESS</p>
+          <h2 id="login-title">IMPORT INTELLIGENCE</h2>
+          <p>
+            {mode === "bootstrap"
+              ? "Create the first administrator account for this new empty IMPORT INTELLIGENCE environment."
+              : "Sign in with your IMPORT INTELLIGENCE account to manage import operations."}
+          </p>
+          <form className="login-form" onSubmit={submit}>
+            {mode === "bootstrap" ? (
+              <label className="field">
+                DISPLAY NAME
+                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+              </label>
+            ) : null}
             <label className="field">
-              DISPLAY NAME
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+              EMAIL
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
             </label>
-          ) : null}
-          <label className="field">
-            EMAIL
-            <input
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            PASSWORD
-            <input
-              type="password"
-              autoComplete={mode === "bootstrap" ? "new-password" : "current-password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              minLength={8}
-              required
-            />
-          </label>
-          {message ? <p className="status-message">{message}</p> : null}
-          <button className="primary-link" type="submit" disabled={checking}>
-            {mode === "bootstrap" ? "CREATE FIRST ADMIN" : "SIGN IN"}
-          </button>
-        </form>
+            <label className="field">
+              PASSWORD
+              <input
+                type="password"
+                autoComplete={mode === "bootstrap" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={8}
+                required
+              />
+            </label>
+            {message ? <p className="status-message">{message}</p> : null}
+            <button className="primary-link" type="submit" disabled={checking}>
+              {mode === "bootstrap" ? "CREATE FIRST ADMIN" : "SIGN IN"}
+            </button>
+          </form>
+        </div>
       </section>
     </main>
   );
