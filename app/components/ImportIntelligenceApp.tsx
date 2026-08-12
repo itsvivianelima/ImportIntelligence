@@ -48,6 +48,20 @@ type ModuleConfig = {
 type Row = Record<string, string | number | boolean | null>;
 type RowsByEntity = Record<string, Row[]>;
 type ModalState = { module: ModuleConfig; row: Row | null } | null;
+type ExcelPreview = {
+  sessionId: string;
+  templateVersion: string;
+  fileName: string;
+  fileSize: number;
+  sheetsProcessed: string[];
+  sheetsIgnored: string[];
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ severity: string; sheet: string; row: number; identifier: string; message: string; received?: string; expected?: string }>;
+  warnings: Array<{ severity: string; sheet: string; row: number; identifier: string; message: string; received?: string; expected?: string }>;
+  rows: Array<{ sheet: string; row: number; entity: string; action: string; identifier: string; data: Row }>;
+};
 
 const routeOptions = ["", ...seaDestinations, ...airDestinations];
 const documentTypes = [
@@ -573,6 +587,7 @@ export function ImportIntelligenceApp({
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
+  const [excelOpen, setExcelOpen] = useState(false);
   const [appearance, setAppearance] = useState(() => {
     if (typeof window === "undefined") return "SYSTEM";
     return window.localStorage.getItem("import-ops-appearance") ?? "SYSTEM";
@@ -710,9 +725,12 @@ export function ImportIntelligenceApp({
               <h2>{active.title}</h2>
               <p>{active.description}</p>
             </div>
-            {entityKey && !active.readOnly ? (
-              <button onClick={() => setModal({ module: active, row: null })}>{active.newLabel ?? `New ${singular(active.title)}`}</button>
-            ) : null}
+            <div className="page-actions">
+              <button onClick={() => setExcelOpen(true)}>Excel Import & Export</button>
+              {entityKey && !active.readOnly ? (
+                <button onClick={() => setModal({ module: active, row: null })}>{active.newLabel ?? `New ${singular(active.title)}`}</button>
+              ) : null}
+            </div>
           </div>
 
           {active.key === "dashboard" ? <Dashboard rowsByEntity={rowsByEntity} /> : null}
@@ -761,7 +779,141 @@ export function ImportIntelligenceApp({
           }}
         />
       ) : null}
+      {excelOpen ? <ExcelModal scope={entityKey ?? undefined} onClose={() => setExcelOpen(false)} onMessage={setMessage} /> : null}
     </main>
+  );
+}
+
+function ExcelModal({
+  scope,
+  onClose,
+  onMessage,
+}: {
+  scope?: EntityKey;
+  onClose: () => void;
+  onMessage: (message: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ExcelPreview | null>(null);
+  const [status, setStatus] = useState("Upload File");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const scopeQuery = scope ? `&scope=${encodeURIComponent(scope)}` : "";
+
+  async function validateFile() {
+    if (!file) {
+      setError("Choose an .xlsx file before validating.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setStatus("Validating");
+    const body = new FormData();
+    body.set("mode", "validate");
+    body.set("file", file);
+    if (scope) body.set("scope", scope);
+    const response = await fetch("/api/excel", { method: "POST", body });
+    const data = await response.json();
+    setBusy(false);
+    if (!response.ok) {
+      setStatus("Failed");
+      setError(String(data.error ?? "Unable to validate the workbook."));
+      return;
+    }
+    setPreview(data.preview);
+    setStatus(data.preview.errors.length ? "Completed with Errors" : "Ready for Review");
+  }
+
+  async function confirmImport() {
+    if (!preview) return;
+    setBusy(true);
+    setStatus("Importing");
+    const body = new FormData();
+    body.set("mode", "commit");
+    body.set("preview", JSON.stringify(preview));
+    if (scope) body.set("scope", scope);
+    const response = await fetch("/api/excel", { method: "POST", body });
+    const blob = await response.blob();
+    setBusy(false);
+    if (!response.ok) {
+      setStatus("Failed");
+      setError("Import could not be completed. Download the errors, correct the workbook, and try again.");
+      return;
+    }
+    downloadBlob(blob, `Import_Result_${preview.sessionId}.xlsx`);
+    setStatus("Completed");
+    onMessage("Excel import completed. The result workbook was downloaded.");
+  }
+
+  return (
+    <ModalShell title="Excel Import & Export" subtitle={scope ? `Context: ${moduleTitle(scope)}` : "Global workbook"} size="medium" dirty={Boolean(file || preview)} onClose={onClose}>
+      <div className="excel-panel">
+        <div className="excel-actions">
+          <a className="export-link" href={`/api/excel?action=blank-template${scopeQuery}`}>Download Blank Template</a>
+          <a className="export-link" href={`/api/excel?action=example-template${scopeQuery}`}>Download Example Template</a>
+          <a className="export-link" href={`/api/excel?action=export${scopeQuery}`}>Export to Excel</a>
+        </div>
+        <div className="import-steps" aria-label="Import progress">
+          {["Upload File", "Validate Structure", "Review Data", "Resolve Conflicts", "Confirm Import", "Import Results"].map((step) => (
+            <span key={step} className={status.includes(step.split(" ")[0]) || status === step ? "active" : ""}>{step}</span>
+          ))}
+        </div>
+        {error ? <p className="status-message danger">{error}</p> : null}
+        <label className="field field-wide">
+          Import from Excel
+          <input type="file" accept=".xlsx" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        </label>
+        {file ? <p className="file-meta">{file.name} · {Math.round(file.size / 1024)} KB · {file.lastModified ? new Date(file.lastModified).toLocaleString() : "Modified date unavailable"}</p> : null}
+        <div className="modal-footer inline-footer">
+          <button onClick={onClose}>Cancel</button>
+          <button onClick={validateFile} disabled={busy || !file}>{busy ? status : "Validate Structure"}</button>
+          <button onClick={confirmImport} disabled={busy || !preview || preview.errors.length > 0}>Confirm Import</button>
+        </div>
+        {preview ? <ExcelPreviewPanel preview={preview} /> : null}
+      </div>
+    </ModalShell>
+  );
+}
+
+function ExcelPreviewPanel({ preview }: { preview: ExcelPreview }) {
+  const issues = [...preview.errors, ...preview.warnings];
+  return (
+    <section className="excel-preview">
+      <div className="summary-grid">
+        <article><span>Template Version</span><strong>{preview.templateVersion}</strong></article>
+        <article><span>New Records</span><strong>{preview.created}</strong></article>
+        <article><span>Updates</span><strong>{preview.updated}</strong></article>
+        <article><span>Skipped</span><strong>{preview.skipped}</strong></article>
+        <article><span>Errors</span><strong>{preview.errors.length}</strong></article>
+      </div>
+      <div className="section-summary">
+        <span>Processed: {preview.sheetsProcessed.join(", ") || "-"}</span>
+        <span>Ignored: {preview.sheetsIgnored.join(", ") || "-"}</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Sheet</th><th>Row</th><th>Action</th><th>Identification</th></tr></thead>
+          <tbody>
+            {preview.rows.slice(0, 60).map((row) => (
+              <tr key={`${row.sheet}-${row.row}`}><td>{row.sheet}</td><td>{row.row}</td><td>{row.action}</td><td>{row.identifier}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {issues.length ? (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Severity</th><th>Sheet</th><th>Row</th><th>Message</th><th>Received</th><th>Expected</th></tr></thead>
+            <tbody>
+              {issues.slice(0, 80).map((issue, index) => (
+                <tr key={`${issue.sheet}-${issue.row}-${index}`}><td>{issue.severity}</td><td>{issue.sheet}</td><td>{issue.row}</td><td>{issue.message}</td><td>{issue.received ?? "-"}</td><td>{issue.expected ?? "-"}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1866,4 +2018,15 @@ function singular(title: string) {
 
 function emptyText(title: string) {
   return `${title} will appear here after you add matching operational data.`;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
