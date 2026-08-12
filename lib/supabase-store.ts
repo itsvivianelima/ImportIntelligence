@@ -41,6 +41,7 @@ const entityTables: Record<EntityKey, string> = {
   supplierPartHistory: "ii_supplier_part_history",
   monthlyExchangeRates: "ii_monthly_exchange_rates",
   shipmentCosts: "ii_shipment_costs",
+  shipmentDocuments: "shipment_documents",
   freeTimeRules: "ii_free_time_rules",
   consolidationShipments: "ii_consolidation_shipments",
   timelineEvents: "ii_timeline_events",
@@ -73,6 +74,7 @@ const dateFields = new Set([
   "hbl_awb_date",
   "free_time_deadline",
   "source_date",
+  "document_date",
   "hbl_awb_date",
 ]);
 
@@ -445,11 +447,11 @@ function findMatchingPublicRate(rates: Record<string, unknown>[], shipment: Reco
 function matchesRate(rate: Record<string, unknown>, shipment: Record<string, unknown>, equipment: unknown) {
   const pol = String(rate.pol ?? "ALL");
   const pod = String(rate.pod ?? "ALL");
-  const containerType = String(rate.containerType ?? "Todos");
+  const containerType = String(rate.containerType ?? "All Equipment");
   return (
     (pol === "ALL" || pol === String(shipment.pol ?? "")) &&
     (pod === "ALL" || pod === String(shipment.pod ?? "")) &&
-    (containerType === "Todos" || !equipment || containerType === String(equipment))
+    (containerType === "All Equipment" || !equipment || containerType === String(equipment))
   );
 }
 

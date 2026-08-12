@@ -181,7 +181,7 @@ function buildExcelHtml(title: string, rows: Row[]) {
 <tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>
 </thead>
 <tbody>
-${rows.length ? rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">NO RECORDS</td></tr>`}
+${rows.length ? rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">No matching data</td></tr>`}
 </tbody>
 </table>
 </body>

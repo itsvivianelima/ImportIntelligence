@@ -14,7 +14,7 @@ export function LoginPanel() {
     fetch("/api/auth")
       .then((response) => response.json())
       .then((data) => setMode(data.hasUsers ? "login" : "bootstrap"))
-      .catch(() => setMessage("AUTHENTICATION DATABASE IS NOT READY"))
+      .catch(() => setMessage("Authentication service is not ready. Try again in a moment."))
       .finally(() => setChecking(false));
   }, []);
 
@@ -30,7 +30,7 @@ export function LoginPanel() {
     const data = await response.json();
 
     if (!response.ok) {
-      setMessage(String(data.error ?? "AUTHENTICATION FAILED").toUpperCase());
+      setMessage(String(data.error ?? "Authentication failed. Check your email and password."));
       return;
     }
 
@@ -41,8 +41,8 @@ export function LoginPanel() {
     <main className="login-shell">
       <section className="login-brand-panel">
         <div className="brand-mark hero-mark">II</div>
-        <p className="login-kicker">IMPORT OPERATIONS CONTROL</p>
-        <h1>IMPORT INTELLIGENCE</h1>
+        <p className="login-kicker">Import Operations Control</p>
+        <h1>Import Operations</h1>
         <p>
           Precision workspace for suppliers, demands, shipments, freight contracts,
           delivery dates, and import performance.
@@ -50,22 +50,22 @@ export function LoginPanel() {
       </section>
       <section className="login-panel" aria-labelledby="login-title">
         <div className="login-card">
-          <p className="login-kicker">SECURE ACCESS</p>
-          <h2 id="login-title">IMPORT INTELLIGENCE</h2>
+          <p className="login-kicker">Secure Access</p>
+          <h2 id="login-title">Import Operations</h2>
           <p>
             {mode === "bootstrap"
-              ? "Create the first administrator account for this new empty IMPORT INTELLIGENCE environment."
-              : "Sign in with your IMPORT INTELLIGENCE account to manage import operations."}
+              ? "Create the first administrator account for this operations workspace."
+              : "Sign in to manage import operations."}
           </p>
           <form className="login-form" onSubmit={submit}>
             {mode === "bootstrap" ? (
               <label className="field">
-                DISPLAY NAME
+                Display Name
                 <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
               </label>
             ) : null}
             <label className="field">
-              EMAIL
+              Email
               <input
                 type="email"
                 autoComplete="email"
@@ -75,7 +75,7 @@ export function LoginPanel() {
               />
             </label>
             <label className="field">
-              PASSWORD
+              Password
               <input
                 type="password"
                 autoComplete={mode === "bootstrap" ? "new-password" : "current-password"}
@@ -87,7 +87,7 @@ export function LoginPanel() {
             </label>
             {message ? <p className="status-message">{message}</p> : null}
             <button className="primary-link" type="submit" disabled={checking}>
-              {mode === "bootstrap" ? "CREATE FIRST ADMIN" : "SIGN IN"}
+              {mode === "bootstrap" ? "Create First Admin" : "Sign In"}
             </button>
           </form>
         </div>

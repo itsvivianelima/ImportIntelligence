@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IMPORT INTELLIGENCE",
+  title: "Import Operations",
   description: "Import management platform for demands, shipments, costs, and intelligence.",
   icons: {
     icon: "/favicon.svg",

@@ -20,21 +20,22 @@ export type EntityKey =
   | "supplierPartHistory"
   | "monthlyExchangeRates"
   | "shipmentCosts"
+  | "shipmentDocuments"
   | "freeTimeRules"
   | "consolidationShipments"
   | "timelineEvents";
 
 export const materialTypes = [
-  "Matéria Prima",
-  "Improdutivo",
-  "Revenda",
-  "Amostra",
+  "Raw Material",
+  "Indirect Material",
+  "Resale",
+  "Sample",
 ] as const;
 
 export const modals = ["AIR", "LCL", "FCL"] as const;
-export const clearanceTypes = ["Formal", "Liberação Expressa"] as const;
-export const tariffTypes = ["SPOT", "BID", "Contrato Maersk", "Economy", "Priority"] as const;
-export const containerTypes = ["20 Dry", "40 Dry", "40 High Cube / 40 HC", "40 NOR"] as const;
+export const clearanceTypes = ["Formal Clearance", "Express Clearance"] as const;
+export const tariffTypes = ["Maersk Contract", "Bid", "Spot", "Not Applicable"] as const;
+export const containerTypes = ["20' Dry", "40' Dry", "40' High Cube", "40' NOR"] as const;
 export const currencies = ["BRL", "USD", "EUR", "GBP", "SEK"] as const;
 export const paymentTerms = ["NET", "DDL", "ADV"] as const;
 export const packageTypes = ["Carton", "Pallet", "Wooden Case", "Crate", "Bundle", "Other"] as const;

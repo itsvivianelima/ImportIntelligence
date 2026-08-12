@@ -24,7 +24,7 @@ export const partNumbers = sqliteTable("part_numbers", {
   partNumber: text("part_number").notNull(),
   description: text("description").notNull().default(""),
   ncm: text("ncm").notNull().default(""),
-  materialType: text("material_type").notNull().default("Matéria Prima"),
+  materialType: text("material_type").notNull().default("Raw Material"),
   netWeightKg: real("net_weight_kg").notNull().default(0),
   cbm: real("cbm").notNull().default(0),
   ...timestamps,
@@ -77,7 +77,7 @@ export const shipments = sqliteTable("shipments", {
   supplierId: integer("supplier_id").references(() => suppliers.id),
   agentId: integer("agent_id").references(() => agents.id),
   modal: text("modal").notNull().default("LCL"),
-  shipmentType: text("shipment_type").notNull().default("Matéria Prima"),
+  shipmentType: text("shipment_type").notNull().default("Raw Material"),
   incoterm: text("incoterm").notNull().default(""),
   cfs: text("cfs").notNull().default(""),
   pol: text("pol").notNull().default(""),
@@ -197,6 +197,18 @@ export const shipmentCosts = sqliteTable("shipment_costs", {
   currency: text("currency").notNull().default(""),
   amount: real("amount").notNull().default(0),
   source: text("source").notNull().default(""),
+  ...timestamps,
+});
+
+export const shipmentDocuments = sqliteTable("shipment_documents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipmentId: integer("shipment_id").notNull().references(() => shipments.id),
+  documentType: text("document_type").notNull().default("Other"),
+  documentNumber: text("document_number").notNull().default(""),
+  documentDate: text("document_date").notNull().default(""),
+  fileName: text("file_name").notNull().default(""),
+  storagePath: text("storage_path").notNull().default(""),
+  notes: text("notes").notNull().default(""),
   ...timestamps,
 });
 

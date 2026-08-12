@@ -18,6 +18,7 @@ import {
   publicRates,
   requesters,
   shipmentCosts,
+  shipmentDocuments,
   shipments,
   shipmentDemands,
   supplierPartHistory,
@@ -74,42 +75,44 @@ const tableByEntity = {
   supplierPartHistory,
   monthlyExchangeRates,
   shipmentCosts,
+  shipmentDocuments,
   freeTimeRules,
   consolidationShipments,
   timelineEvents,
 } as const;
 
 const entityLabels: Record<EntityKey, string> = {
-  suppliers: "SUPPLIERS",
-  partNumbers: "PART NUMBERS",
-  requesters: "REQUESTERS",
-  agents: "AGENTS",
+  suppliers: "Suppliers",
+  partNumbers: "Part Numbers",
+  requesters: "Requesters",
+  agents: "Freight Forwarders",
   pol: "POL",
   cfs: "CFS",
-  demands: "DEMANDS",
-  shipments: "SHIPMENTS",
-  consolidations: "CONSOLIDATIONS",
-  freightContracts: "FREIGHT CONTRACTS",
-  publicRates: "PUBLIC RATES",
-  surcharges: "SURCHARGES",
-  exchangeRates: "EXCHANGE RATES",
-  commercialInvoices: "COMMERCIAL INVOICES",
-  packages: "PACKAGES",
-  containers: "CONTAINERS",
-  shipmentDemands: "SHIPMENT DEMANDS",
-  invoiceItems: "INVOICE ITEMS",
-  supplierPartHistory: "SUPPLIER PART HISTORY",
-  monthlyExchangeRates: "MONTHLY EXCHANGE RATES",
-  shipmentCosts: "SHIPMENT COSTS",
-  freeTimeRules: "FREE TIME RULES",
-  consolidationShipments: "CONSOLIDATION SHIPMENTS",
-  timelineEvents: "TIMELINE EVENTS",
+  demands: "Demands",
+  shipments: "Shipments",
+  consolidations: "Consolidations",
+  freightContracts: "Freight Contracts",
+  publicRates: "Reference Rates",
+  surcharges: "Surcharges",
+  exchangeRates: "Daily Exchange Rates",
+  commercialInvoices: "Commercial Invoices",
+  packages: "Packing",
+  containers: "Containers",
+  shipmentDemands: "Demand Allocation",
+  invoiceItems: "Invoice Items",
+  supplierPartHistory: "Supplier Part History",
+  monthlyExchangeRates: "Monthly Modine Rates",
+  shipmentCosts: "Shipment Costs",
+  shipmentDocuments: "Shipment Documents",
+  freeTimeRules: "Free Time Rules",
+  consolidationShipments: "Consolidation Loads",
+  timelineEvents: "Activity History",
 };
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
   if (message.includes("D1 binding") || message.includes("no such table")) {
-    return "The IMPORT INTELLIGENCE database is not initialized yet. Generate and apply the included D1 migration before writing operational records.";
+    return "The operational database is not initialized yet. Apply the included migration before writing records.";
   }
   return message;
 }
@@ -194,7 +197,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     const db = await getDatabase();
     const table = tableByEntity[entity];
-    const rows = await db.select().from(table).limit(200);
+    const rows = (await db.select().from(table).limit(200)) as Array<Record<string, unknown>>;
     const filtered =
       entity === "pol" || entity === "cfs"
         ? rows.filter((row) => row.kind === entity.toUpperCase())
@@ -294,7 +297,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         previousValue: previousRow ? JSON.stringify(previousRow) : "",
         newValue: JSON.stringify(row),
         actorEmail: user.email,
-        notes: "Record updated through IMPORT INTELLIGENCE",
+        notes: "Record updated through the operations workspace",
       });
     }
 

@@ -6,7 +6,7 @@ import { getCurrentAppUser } from "../lib/auth";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "IMPORT INTELLIGENCE",
+  title: "Import Operations",
   description: "Import management platform for demands, shipments, costs, and intelligence.",
 };
 

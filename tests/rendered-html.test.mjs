@@ -23,19 +23,19 @@ async function render(headers = {}) {
   );
 }
 
-test("server-renders the IMPORT INTELLIGENCE login", async () => {
+test("server-renders the operations login", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>IMPORT INTELLIGENCE<\/title>/i);
-  assert.match(html, /IMPORT OPERATIONS CONTROL/);
-  assert.match(html, /CREATE FIRST ADMIN|SIGN IN/);
+  assert.match(html, /<title>Import Operations<\/title>/i);
+  assert.match(html, /Import Operations Control/);
+  assert.match(html, /Create First Admin|Sign In/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton|signin-with-chatgpt/i);
 });
 
-test("keeps the greenfield product name and database binding", async () => {
+test("keeps the product metadata and database binding", async () => {
   const [page, layout, packageJson, hosting, migration] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -44,8 +44,8 @@ test("keeps the greenfield product name and database binding", async () => {
     readFile(new URL("../drizzle/0000_brave_eternity.sql", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /IMPORT INTELLIGENCE/);
-  assert.match(layout, /title:\s*"IMPORT INTELLIGENCE"/);
+  assert.match(page, /title:\s*"Import Operations"/);
+  assert.match(layout, /title:\s*"Import Operations"/);
   assert.match(packageJson, /"name": "import-intelligence"/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(migration, /CREATE TABLE `shipments`/);
